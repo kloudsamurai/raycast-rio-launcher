@@ -23,7 +23,7 @@ export interface CargoPackageConfig {
 export class DependencyInstaller {
   private getSystemPaths(): string[] {
     const isWindows = platform() === "win32";
-    
+
     if (isWindows) {
       // Windows system paths
       return [
@@ -43,7 +43,7 @@ export class DependencyInstaller {
         "/sbin",
         "/usr/sbin",
         "/opt/homebrew/bin", // macOS M1
-        "/opt/local/bin",    // MacPorts
+        "/opt/local/bin", // MacPorts
         "/usr/local/sbin",
       ];
     }
@@ -53,19 +53,19 @@ export class DependencyInstaller {
     try {
       // Build PATH with system paths first, then user's PATH
       const systemPaths = this.getSystemPaths();
-      const existingPath = process.env.PATH || '';
+      const existingPath = process.env.PATH || "";
       const pathSeparator = delimiter;
-      
+
       // Filter out non-existent paths and join
-      const validSystemPaths = systemPaths.filter(p => existsSync(p));
+      const validSystemPaths = systemPaths.filter((p) => existsSync(p));
       const fullPath = [...validSystemPaths, existingPath].join(pathSeparator);
-      
+
       const result = await execAsync(command, {
         shell: process.env.SHELL || (platform() === "win32" ? "cmd.exe" : "/bin/sh"),
         env: {
           ...process.env,
-          PATH: fullPath
-        }
+          PATH: fullPath,
+        },
       });
       return result;
     } catch (error) {

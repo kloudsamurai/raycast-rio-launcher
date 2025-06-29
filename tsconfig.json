@@ -2,7 +2,6 @@
   "$schema": "https://json.schemastore.org/tsconfig",
   "display": "Node 20 + Strictest",
   "compilerOptions": {
-    "charset": "utf8",
     "esModuleInterop": true,
     "allowJs": false,
     "forceConsistentCasingInFileNames": true,

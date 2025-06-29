@@ -6,7 +6,7 @@
   "icon": "icon.png",
   "author": "kloudsamurai",
   "owner": "cyrup-ai",
-  "access": "public",
+  "access": "private",
   "categories": ["Developer Tools", "Productivity"],
   "license": "MIT",
   "commands": [

@@ -1,7 +1,7 @@
 {
   "$schema": "https://www.raycast.com/schemas/extension.json",
   "name": "rio-launcher",
-  "title": "Launch Rio Terminal",
+  "title": "Rio",
   "description": "Quickly launch the Rio terminal emulator",
   "icon": "icon.png",
   "author": "kloudsamurai",
@@ -12,10 +12,11 @@
   "commands": [
     {
       "name": "launch-rio",
-      "title": "Launch Rio",
+      "title": "Rio",
       "subtitle": "Terminal",
       "description": "Opens the Rio terminal emulator",
-      "mode": "no-view"
+      "mode": "no-view",
+      "keywords": ["rioterm", "terminal", "rio"]
     }
   ],
   "dependencies": {

@@ -2,8 +2,8 @@ import { showToast, Toast } from "@raycast/api";
 import { exec, spawn } from "child_process";
 import { promisify } from "util";
 import { existsSync } from "fs";
-import { homedir } from "os";
-import { join } from "path";
+import { homedir, platform } from "os";
+import { join, delimiter } from "path";
 
 const execAsync = promisify(exec);
 
@@ -21,9 +21,52 @@ export interface CargoPackageConfig {
 }
 
 export class DependencyInstaller {
+  private getSystemPaths(): string[] {
+    const isWindows = platform() === "win32";
+    
+    if (isWindows) {
+      // Windows system paths
+      return [
+        "C:\\Windows\\System32",
+        "C:\\Windows",
+        "C:\\Windows\\System32\\Wbem",
+        "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\",
+        process.env.PROGRAMFILES || "C:\\Program Files",
+        process.env["PROGRAMFILES(X86)"] || "C:\\Program Files (x86)",
+      ];
+    } else {
+      // Unix-like system paths (macOS, Linux)
+      return [
+        "/bin",
+        "/usr/bin",
+        "/usr/local/bin",
+        "/sbin",
+        "/usr/sbin",
+        "/opt/homebrew/bin", // macOS M1
+        "/opt/local/bin",    // MacPorts
+        "/usr/local/sbin",
+      ];
+    }
+  }
+
   private async executeCommand(command: string): Promise<{ stdout: string; stderr: string }> {
     try {
-      const result = await execAsync(command);
+      // Build PATH with system paths first, then user's PATH
+      const systemPaths = this.getSystemPaths();
+      const existingPath = process.env.PATH || '';
+      const pathSeparator = delimiter;
+      
+      // Filter out non-existent paths and join
+      const validSystemPaths = systemPaths.filter(p => existsSync(p));
+      const fullPath = [...validSystemPaths, existingPath].join(pathSeparator);
+      
+      const result = await execAsync(command, {
+        shell: process.env.SHELL || (platform() === "win32" ? "cmd.exe" : "/bin/sh"),
+        env: {
+          ...process.env,
+          PATH: fullPath
+        }
+      });
       return result;
     } catch (error) {
       throw new Error(`Command failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -37,7 +80,7 @@ export class DependencyInstaller {
       const rustPath = join(cargoHome, "bin", command);
       return existsSync(rustPath);
     }
-    
+
     // For other commands, try which
     try {
       await this.executeCommand(`which ${command}`);
@@ -60,7 +103,7 @@ export class DependencyInstaller {
 
     try {
       const isInstalled = await this.isCommandAvailable(config.checkCommand);
-      
+
       // Debug: Show what was detected
       if (isInstalled) {
         toast.style = Toast.Style.Success;
@@ -128,21 +171,21 @@ export class DependencyInstaller {
         // Use spawn to get real-time output
         await new Promise<void>((resolve, reject) => {
           const child = spawn("cargo", ["install", config.packageName], { env });
-          
+
           let lastUpdate = Date.now();
           let outputBuffer = "";
           let downloadCount = 0;
           let compileCount = 0;
-          
+
           const updateToast = (data: string) => {
             outputBuffer += data;
             const now = Date.now();
-            
+
             // Update toast every 1 second for smoother animation
             if (now - lastUpdate > 1000) {
-              const lines = outputBuffer.split('\n').filter(line => line.trim());
+              const lines = outputBuffer.split("\n").filter((line) => line.trim());
               const recentLines = lines.slice(-5); // Check last 5 lines for better coverage
-              
+
               // Parse cargo output for progress
               for (const line of recentLines) {
                 if (line.includes("Downloading")) {
@@ -176,15 +219,15 @@ export class DependencyInstaller {
                   }
                 }
               }
-              
+
               lastUpdate = now;
-              outputBuffer = lines.slice(-10).join('\n'); // Keep only recent lines to prevent memory issues
+              outputBuffer = lines.slice(-10).join("\n"); // Keep only recent lines to prevent memory issues
             }
           };
-          
+
           child.stdout.on("data", (data) => updateToast(data.toString()));
           child.stderr.on("data", (data) => updateToast(data.toString()));
-          
+
           child.on("close", (code) => {
             if (code === 0) {
               resolve();
@@ -192,7 +235,7 @@ export class DependencyInstaller {
               reject(new Error(`Installation failed with exit code ${code}`));
             }
           });
-          
+
           child.on("error", (error) => {
             reject(error);
           });

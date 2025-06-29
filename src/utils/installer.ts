@@ -25,8 +25,8 @@ export class DependencyInstaller {
     try {
       const result = await execAsync(command);
       return result;
-    } catch (error: any) {
-      throw new Error(`Command failed: ${error.message}`);
+    } catch (error) {
+      throw new Error(`Command failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -52,18 +52,18 @@ export class DependencyInstaller {
 
     try {
       const isInstalled = await this.isCommandAvailable(config.checkCommand);
-      
+
       if (!isInstalled) {
         toast.title = config.installMessage;
         toast.message = "This may take a few minutes...";
-        
+
         await this.executeCommand(config.installCommand);
-        
+
         toast.style = Toast.Style.Success;
         toast.title = `${config.name} installed successfully`;
         return true;
       }
-      
+
       toast.style = Toast.Style.Success;
       toast.title = `${config.name} is already installed`;
       return true;
@@ -101,22 +101,22 @@ export class DependencyInstaller {
 
     try {
       const isInstalled = await this.isCargoPackageInstalled(config.binaryName);
-      
+
       if (!isInstalled) {
         toast.title = `Installing ${config.name}...`;
         toast.message = "This may take a few minutes...";
-        
+
         // Ensure cargo is in PATH
         const cargoPath = join(homedir(), ".cargo", "bin");
         const env = { ...process.env, PATH: `${cargoPath}:${process.env.PATH}` };
-        
+
         await execAsync(`cargo install ${config.packageName}`, { env });
-        
+
         toast.style = Toast.Style.Success;
         toast.title = `${config.name} installed successfully`;
         return true;
       }
-      
+
       toast.style = Toast.Style.Success;
       toast.title = `${config.name} is already installed`;
       return true;
@@ -132,11 +132,11 @@ export class DependencyInstaller {
     try {
       // Check and install Rust/Cargo (they come together)
       await this.checkAndInstallRust();
-      
+
       // Ensure cargo is available after installation
       const cargoPath = join(homedir(), ".cargo", "bin");
       process.env.PATH = `${cargoPath}:${process.env.PATH}`;
-      
+
       return true;
     } catch (error) {
       throw new Error(`Failed to setup Rust toolchain: ${error}`);

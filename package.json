@@ -5,7 +5,7 @@
   "description": "Quickly launch the Rio terminal emulator",
   "icon": "icon.png",
   "author": "kloudsamurai",
-  "owner": "Cyrup.ai",
+  "owner": "cyrup-ai",
   "access": "public",
   "categories": ["Developer Tools", "Productivity"],
   "license": "MIT",

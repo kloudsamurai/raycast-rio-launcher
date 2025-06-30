@@ -1,57 +1,45 @@
 import { closeMainWindow, showHUD, showToast, Toast } from "@raycast/api";
 import { exec } from "child_process";
-import { homedir, platform } from "os";
-import { join, delimiter } from "path";
-import { existsSync } from "fs";
+import { homedir } from "os";
+import { join } from "path";
 import { DependencyInstaller } from "./utils/installer";
+import { PathManager } from "./utils/path-manager";
 
 export default async function launchRio() {
   const installer = new DependencyInstaller();
+  const pathManager = PathManager.getInstance();
 
   try {
-    // Step 1: Ensure Rust toolchain is installed
-    await installer.ensureRustToolchain();
+    // Step 1: Check system requirements
+    await installer.checkSystemRequirements();
 
-    // Step 2: Install Rio if not already installed
+    // Step 2: Ensure development environment (Volta + Rust)
+    await installer.ensureDevelopmentEnvironment();
+
+    // Step 3: Install Rio if not already installed
     await installer.checkAndInstallCargoPackage({
       name: "Rio Terminal",
       packageName: "rioterm",
       binaryName: "rio",
     });
 
-    // Step 3: Launch Rio
+    // Step 4: Ensure Rio configuration exists
+    await installer.ensureRioConfig();
+
+    // Step 5: Ensure required fonts are installed
+    await installer.ensureRequiredFonts();
+
+    // Step 6: Launch Rio
     const rioPath = join(homedir(), ".cargo", "bin", "rio");
     await closeMainWindow();
 
-    // Build cross-platform PATH
-    const isWindows = platform() === "win32";
-    const systemPaths = isWindows
-      ? [
-          "C:\\Windows\\System32",
-          "C:\\Windows",
-          "C:\\Windows\\System32\\Wbem",
-          "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\",
-          process.env.PROGRAMFILES || "C:\\Program Files",
-          process.env["PROGRAMFILES(X86)"] || "C:\\Program Files (x86)",
-        ]
-      : [
-          "/bin",
-          "/usr/bin",
-          "/usr/local/bin",
-          "/sbin",
-          "/usr/sbin",
-          "/opt/homebrew/bin",
-          "/opt/local/bin",
-          "/usr/local/sbin",
-        ];
-
-    const validSystemPaths = systemPaths.filter((p) => existsSync(p));
-    const fullPath = [...validSystemPaths, process.env.PATH || ""].join(delimiter);
+    const cargoPath = join(homedir(), ".cargo", "bin");
+    const fullPath = pathManager.buildFullPath([cargoPath]);
 
     exec(
       `"${rioPath}"`,
       {
-        shell: process.env.SHELL || (isWindows ? "cmd.exe" : "/bin/sh"),
+        shell: pathManager.getDefaultShell(),
         env: {
           ...process.env,
           PATH: fullPath,

@@ -1,5 +1,6 @@
 {
   "$schema": "https://www.raycast.com/schemas/extension.json",
+  "type": "module",
   "name": "rio-launcher",
   "title": "Rio",
   "description": "Quickly launch the Rio terminal emulator",
@@ -7,7 +8,10 @@
   "author": "kloudsamurai",
   "owner": "cyrup-ai",
   "access": "private",
-  "categories": ["Developer Tools", "Productivity"],
+  "categories": [
+    "Developer Tools",
+    "Productivity"
+  ],
   "license": "MIT",
   "commands": [
     {
@@ -16,19 +20,99 @@
       "subtitle": "Terminal",
       "description": "Opens the Rio terminal emulator",
       "mode": "no-view",
-      "keywords": ["rioterm", "terminal", "rio"]
+      "keywords": [
+        "rioterm",
+        "terminal",
+        "rio"
+      ],
+      "interval": "30m"
+    },
+    {
+      "name": "launch-advanced",
+      "title": "Launch Rio (advanced)",
+      "subtitle": "Terminal",
+      "description": "Launch Rio with advanced options and profiles",
+      "mode": "view",
+      "keywords": [
+        "rioterm",
+        "terminal",
+        "rio",
+        "launch",
+        "advanced"
+      ]
+    },
+    {
+      "name": "configure-rio",
+      "title": "Configure Rio",
+      "subtitle": "Settings",
+      "description": "Configure Rio terminal features and capabilities",
+      "mode": "view",
+      "keywords": [
+        "config",
+        "settings",
+        "features",
+        "rio",
+        "configure"
+      ]
+    },
+    {
+      "name": "configure-advanced",
+      "title": "Configure Rio (advanced)",
+      "subtitle": "Settings",
+      "description": "Advanced Rio configuration with TOML editing",
+      "mode": "view",
+      "keywords": [
+        "config",
+        "settings",
+        "advanced",
+        "toml",
+        "rio"
+      ]
+    },
+    {
+      "name": "manage-sessions",
+      "title": "Rio Sessions",
+      "subtitle": "Manage",
+      "description": "Manage Rio terminal sessions and windows",
+      "mode": "view",
+      "keywords": [
+        "session",
+        "windows",
+        "manage",
+        "rio"
+      ]
+    },
+    {
+      "name": "menu-bar",
+      "title": "Rio Status",
+      "subtitle": "Menu Bar",
+      "description": "Show Rio status in menu bar",
+      "mode": "menu-bar",
+      "interval": "5m",
+      "keywords": [
+        "status",
+        "menu",
+        "bar",
+        "rio"
+      ]
     }
   ],
   "dependencies": {
-    "@raycast/api": "^1.100.3"
+    "@iarna/toml": "^2.2.5",
+    "@raycast/api": "^1.100.3",
+    "@raycast/utils": "^2.0.1"
   },
   "devDependencies": {
-    "@raycast/eslint-config": "^1.0.11",
-    "@types/node": "20.8.10",
-    "@types/react": "18.3.3",
-    "eslint": "^8.57.0",
-    "prettier": "^3.3.3",
-    "typescript": "^5.4.5"
+    "@eslint/js": "^9.30.0",
+    "@raycast/eslint-config": "^2.0.4",
+    "@types/node": "^24.0.7",
+    "@types/react": "^19.1.8",
+    "@typescript-eslint/eslint-plugin": "^8.35.0",
+    "@typescript-eslint/parser": "^8.35.0",
+    "eslint": "^9.30.0",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "typescript": "^5.8.3"
   },
   "scripts": {
     "build": "ray build --skip-types -o dist",

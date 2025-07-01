@@ -3,15 +3,21 @@ import { existsSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import { CommandExecutor } from "./command-executor";
+import { isDefined, isNonEmptyString } from "./type-guards";
 
-export interface CargoPackageConfig {
+// Constants for magic numbers
+const TOAST_UPDATE_INTERVAL = 1000;
+const RECENT_LINES_COUNT = -5;
+const OUTPUT_BUFFER_LINES = -10;
+
+export interface ICargoPackageConfig {
   name: string;
   packageName: string;
   binaryName: string;
 }
 
 export class CargoPackageManager {
-  private commandExecutor: CommandExecutor;
+  private readonly commandExecutor: CommandExecutor;
 
   constructor() {
     this.commandExecutor = new CommandExecutor();
@@ -22,7 +28,98 @@ export class CargoPackageManager {
     return existsSync(binaryPath);
   }
 
-  async installPackage(config: CargoPackageConfig): Promise<boolean> {
+  private processDownloadLine(line: string, downloadCount: number): { message: string; count: number } {
+    if (line.includes("Downloading")) {
+      const newCount = downloadCount + 1;
+      return { message: `📦 Downloading dependencies... (${newCount})`, count: newCount };
+    }
+    if (line.includes("Downloaded")) {
+      return { message: `✅ Downloaded ${downloadCount} dependencies`, count: downloadCount };
+    }
+    return { message: "", count: downloadCount };
+  }
+
+  private processCompileLine(line: string, compileCount: number): { message: string; count: number } {
+    if (line.includes("Compiling")) {
+      const match = /Compiling (\S+) v([\d.]+)/.exec(line);
+      const newCount = compileCount + 1;
+      if (isDefined(match)) {
+        return { message: `🔨 Compiling ${match[1]} v${match[2]} (${newCount})`, count: newCount };
+      }
+      return { message: `🔨 Compiling... (${newCount})`, count: newCount };
+    }
+    return { message: "", count: compileCount };
+  }
+
+  private processBuildLine(line: string): string {
+    if (line.includes("Building")) {
+      const match = /Building \[([^\]]+)\]/.exec(line);
+      if (isDefined(match)) {
+        return `🏗️ Building [${match[1]}]`;
+      }
+      return "🏗️ Building...";
+    }
+    return "";
+  }
+
+  private processInstallLine(line: string): string {
+    if (line.includes("Installing")) {
+      const match = /Installing (.+) to/.exec(line);
+      if (isDefined(match)) {
+        return `📥 Installing ${match[1]}...`;
+      }
+      return "📥 Installing binary...";
+    }
+    return "";
+  }
+
+  private processFinishLine(line: string): string {
+    if (line.includes("Finished")) {
+      return "✨ Finishing up...";
+    }
+    return "";
+  }
+
+  private processCargoOutputLines(
+    lines: string[],
+    toast: Toast,
+    counters: { downloadCount: number; compileCount: number },
+  ): void {
+    for (const line of lines) {
+      const downloadResult = this.processDownloadLine(line, counters.downloadCount);
+      if (isNonEmptyString(downloadResult.message)) {
+        toast.message = downloadResult.message;
+        counters.downloadCount = downloadResult.count;
+        continue;
+      }
+
+      const compileResult = this.processCompileLine(line, counters.compileCount);
+      if (isNonEmptyString(compileResult.message)) {
+        toast.message = compileResult.message;
+        counters.compileCount = compileResult.count;
+        continue;
+      }
+
+      const buildMessage = this.processBuildLine(line);
+      if (isNonEmptyString(buildMessage)) {
+        toast.message = buildMessage;
+        continue;
+      }
+
+      const finishMessage = this.processFinishLine(line);
+      if (isNonEmptyString(finishMessage)) {
+        toast.message = finishMessage;
+        continue;
+      }
+
+      const installMessage = this.processInstallLine(line);
+      if (isNonEmptyString(installMessage)) {
+        toast.message = installMessage;
+      }
+    }
+  }
+
+  async installPackage(config: ICargoPackageConfig): Promise<boolean> {
     const toast = await showToast({
       style: Toast.Style.Animated,
       title: `Checking ${config.name}...`,
@@ -49,49 +146,21 @@ export class CargoPackageManager {
       let downloadCount = 0;
       let compileCount = 0;
 
-      const updateToast = (data: string) => {
+      const updateToast = (data: string): void => {
         outputBuffer += data;
         const now = Date.now();
 
-        if (now - lastUpdate > 1000) {
-          const lines = outputBuffer.split("\n").filter((line) => line.trim());
-          const recentLines = lines.slice(-5);
+        if (now - lastUpdate > TOAST_UPDATE_INTERVAL) {
+          const lines = outputBuffer.split("\n").filter((line: string) => isNonEmptyString(line.trim()));
+          const recentLines = lines.slice(RECENT_LINES_COUNT);
 
-          for (const line of recentLines) {
-            if (line.includes("Downloading")) {
-              downloadCount++;
-              toast.message = `📦 Downloading dependencies... (${downloadCount})`;
-            } else if (line.includes("Downloaded")) {
-              toast.message = `✅ Downloaded ${downloadCount} dependencies`;
-            } else if (line.includes("Compiling")) {
-              const match = line.match(/Compiling (\S+) v([\d.]+)/);
-              compileCount++;
-              if (match) {
-                toast.message = `🔨 Compiling ${match[1]} v${match[2]} (${compileCount})`;
-              } else {
-                toast.message = `🔨 Compiling... (${compileCount})`;
-              }
-            } else if (line.includes("Building")) {
-              const match = line.match(/Building \[([^\]]+)\]/);
-              if (match) {
-                toast.message = `🏗️ Building [${match[1]}]`;
-              } else {
-                toast.message = "🏗️ Building...";
-              }
-            } else if (line.includes("Finished")) {
-              toast.message = "✨ Finishing up...";
-            } else if (line.includes("Installing")) {
-              const match = line.match(/Installing (.+) to/);
-              if (match) {
-                toast.message = `📥 Installing ${match[1]}...`;
-              } else {
-                toast.message = "📥 Installing binary...";
-              }
-            }
-          }
+          const counters = { downloadCount, compileCount };
+          this.processCargoOutputLines(recentLines, toast, counters);
+          downloadCount = counters.downloadCount;
+          compileCount = counters.compileCount;
 
           lastUpdate = now;
-          outputBuffer = lines.slice(-10).join("\n");
+          outputBuffer = lines.slice(OUTPUT_BUFFER_LINES).join("\n");
         }
       };
 

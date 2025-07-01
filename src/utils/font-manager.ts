@@ -3,8 +3,9 @@ import { existsSync, mkdirSync } from "fs";
 import { homedir, platform } from "os";
 import { join } from "path";
 import { CommandExecutor } from "./command-executor";
+import { isDefinedString, isNonEmptyString } from "./type-guards";
 
-export interface FontConfig {
+export interface IFontConfig {
   name: string;
   fontFamily: string;
   downloadUrl?: string;
@@ -13,29 +14,100 @@ export interface FontConfig {
 }
 
 export class FontManager {
-  private commandExecutor: CommandExecutor;
-  private platform: NodeJS.Platform;
+  private readonly commandExecutor: CommandExecutor;
+  private readonly platform: typeof process.platform;
 
   constructor() {
     this.commandExecutor = new CommandExecutor();
     this.platform = platform();
   }
 
+  private getMacOSFontDirectories(): string[] {
+    return ["/System/Library/Fonts", "/Library/Fonts", join(homedir(), "Library/Fonts")];
+  }
+
+  private getWindowsFontDirectories(): string[] {
+    return ["C:\\Windows\\Fonts", join(process.env.LOCALAPPDATA ?? "", "Microsoft", "Windows", "Fonts")];
+  }
+
+  private getLinuxFontDirectories(): string[] {
+    return [
+      "/usr/share/fonts",
+      "/usr/local/share/fonts",
+      join(homedir(), ".fonts"),
+      join(homedir(), ".local/share/fonts"),
+    ];
+  }
+
   private getFontDirectories(): string[] {
     switch (this.platform) {
       case "darwin":
-        return ["/System/Library/Fonts", "/Library/Fonts", join(homedir(), "Library/Fonts")];
+        return this.getMacOSFontDirectories();
       case "win32":
-        return ["C:\\Windows\\Fonts", join(process.env.LOCALAPPDATA || "", "Microsoft", "Windows", "Fonts")];
+        return this.getWindowsFontDirectories();
       case "linux":
-        return [
-          "/usr/share/fonts",
-          "/usr/local/share/fonts",
-          join(homedir(), ".fonts"),
-          join(homedir(), ".local/share/fonts"),
-        ];
-      default:
+        return this.getLinuxFontDirectories();
+      case "aix":
+      case "android":
+      case "freebsd":
+      case "haiku":
+      case "openbsd":
+      case "sunos":
+      case "cygwin":
+      case "netbsd":
         return [];
+      default: {
+        const exhaustiveCheck: never = this.platform;
+        throw new Error(`Unhandled platform: ${String(exhaustiveCheck)}`);
+      }
+    }
+  }
+
+  private async checkFontOnMacOS(fontFamily: string): Promise<boolean> {
+    // Method 1: Use fc-list (more reliable for Nerd Fonts)
+    try {
+      const { stdout: fcList } = await this.commandExecutor.execute(
+        `fc-list : family | grep -i "${fontFamily}" || true`,
+      );
+      if (isNonEmptyString(fcList) && fcList.toLowerCase().includes(fontFamily.toLowerCase())) {
+        return true;
+      }
+    } catch {
+      // fc-list might not be available
+    }
+
+    // Method 2: Use system_profiler (slower but comprehensive)
+    try {
+      const { stdout } = await this.commandExecutor.execute(
+        `system_profiler SPFontsDataType | grep -i "${fontFamily}" || true`,
+      );
+      if (isNonEmptyString(stdout) && stdout.toLowerCase().includes(fontFamily.toLowerCase())) {
+        return true;
+      }
+    } catch {
+      // Continue with other methods
+    }
+
+    return false;
+  }
+
+  private async checkFontOnWindows(fontFamily: string): Promise<boolean> {
+    try {
+      const { stdout } = await this.commandExecutor.execute(
+        `reg query "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts" | findstr /i "${fontFamily}" || exit 0`,
+      );
+      return isNonEmptyString(stdout) && stdout.toLowerCase().includes(fontFamily.toLowerCase());
+    } catch {
+      return false;
+    }
+  }
+
+  private async checkFontOnLinux(fontFamily: string): Promise<boolean> {
+    try {
+      const { stdout } = await this.commandExecutor.execute(`fc-list | grep -i "${fontFamily}" || true`);
+      return isNonEmptyString(stdout) && stdout.toLowerCase().includes(fontFamily.toLowerCase());
+    } catch {
+      return false;
     }
   }
 
@@ -44,43 +116,25 @@ export class FontManager {
 
     // Check if font exists in any font directory
     for (const dir of fontDirs) {
-      if (!existsSync(dir)) continue;
+      if (!existsSync(dir)) {
+        continue;
+      }
 
       try {
         // Use platform-specific font detection
         if (this.platform === "darwin") {
-          // macOS: Check multiple ways
-          try {
-            // Method 1: Use fc-list (more reliable for Nerd Fonts)
-            const { stdout: fcList } = await this.commandExecutor.execute(
-              `fc-list : family | grep -i "${fontFamily}" || true`,
-            );
-            if (fcList.toLowerCase().includes(fontFamily.toLowerCase())) {
-              return true;
-            }
-          } catch {
-            // fc-list might not be available
-          }
-
-          // Method 2: Use system_profiler (slower but comprehensive)
-          const { stdout } = await this.commandExecutor.execute(
-            `system_profiler SPFontsDataType | grep -i "${fontFamily}" || true`,
-          );
-          if (stdout.toLowerCase().includes(fontFamily.toLowerCase())) {
+          const isInstalled = await this.checkFontOnMacOS(fontFamily);
+          if (isInstalled) {
             return true;
           }
         } else if (this.platform === "win32") {
-          // Windows: Check registry
-          const { stdout } = await this.commandExecutor.execute(
-            `reg query "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts" | findstr /i "${fontFamily}" || exit 0`,
-          );
-          if (stdout.toLowerCase().includes(fontFamily.toLowerCase())) {
+          const isInstalled = await this.checkFontOnWindows(fontFamily);
+          if (isInstalled) {
             return true;
           }
-        } else {
-          // Linux: Use fc-list
-          const { stdout } = await this.commandExecutor.execute(`fc-list | grep -i "${fontFamily}" || true`);
-          if (stdout.toLowerCase().includes(fontFamily.toLowerCase())) {
+        } else if (this.platform === "linux") {
+          const isInstalled = await this.checkFontOnLinux(fontFamily);
+          if (isInstalled) {
             return true;
           }
         }
@@ -111,14 +165,28 @@ export class FontManager {
           // Linux font cache refresh
           await this.commandExecutor.execute(`fc-cache -f -v || true`);
           break;
+        case "aix":
+        case "android":
+        case "freebsd":
+        case "haiku":
+        case "openbsd":
+        case "sunos":
+        case "cygwin":
+        case "netbsd":
+          // No font cache refresh for these platforms
+          break;
+        default: {
+          const exhaustiveCheck: never = this.platform;
+          throw new Error(`Unhandled platform: ${String(exhaustiveCheck)}`);
+        }
       }
     } catch {
       // Font cache refresh is best-effort, don't fail if it doesn't work
     }
   }
 
-  private async installFontMacOS(config: FontConfig): Promise<void> {
-    if (config.brewCask) {
+  private async installFontMacOS(config: IFontConfig): Promise<void> {
+    if (isDefinedString(config.brewCask) && config.brewCask.length > 0) {
       // Try Homebrew first
       const isBrewInstalled = await this.commandExecutor.checkCommand("brew");
       if (isBrewInstalled) {
@@ -131,13 +199,13 @@ export class FontManager {
     }
 
     // Fallback to manual download
-    if (config.downloadUrl) {
+    if (isDefinedString(config.downloadUrl) && config.downloadUrl.length > 0) {
       const fontDir = join(homedir(), "Library/Fonts");
       if (!existsSync(fontDir)) {
         mkdirSync(fontDir, { recursive: true });
       }
 
-      const fileName = config.downloadUrl.split("/").pop() || "font.zip";
+      const fileName = config.downloadUrl.split("/").pop() ?? "font.zip";
       const downloadPath = join("/tmp", fileName);
 
       await this.commandExecutor.execute(
@@ -151,8 +219,8 @@ export class FontManager {
     }
   }
 
-  private async installFontWindows(config: FontConfig): Promise<void> {
-    if (config.chocoPackage) {
+  private async installFontWindows(config: IFontConfig): Promise<void> {
+    if (isDefinedString(config.chocoPackage) && config.chocoPackage.length > 0) {
       // Try Chocolatey first
       const isChocoInstalled = await this.commandExecutor.checkCommand("choco");
       if (isChocoInstalled) {
@@ -162,14 +230,14 @@ export class FontManager {
     }
 
     // Fallback to manual download
-    if (config.downloadUrl) {
-      const fontDir = join(process.env.LOCALAPPDATA || "", "Microsoft", "Windows", "Fonts");
+    if (isDefinedString(config.downloadUrl) && config.downloadUrl.length > 0) {
+      const fontDir = join(process.env.LOCALAPPDATA ?? "", "Microsoft", "Windows", "Fonts");
       if (!existsSync(fontDir)) {
         mkdirSync(fontDir, { recursive: true });
       }
 
-      const fileName = config.downloadUrl.split("/").pop() || "font.zip";
-      const downloadPath = join(process.env.TEMP || "", fileName);
+      const fileName = config.downloadUrl.split("/").pop() ?? "font.zip";
+      const downloadPath = join(process.env.TEMP ?? "", fileName);
 
       await this.commandExecutor.execute(
         `powershell -Command "Invoke-WebRequest -Uri '${config.downloadUrl}' -OutFile '${downloadPath}'; ` +
@@ -182,15 +250,15 @@ export class FontManager {
     }
   }
 
-  private async installFontLinux(config: FontConfig): Promise<void> {
+  private async installFontLinux(config: IFontConfig): Promise<void> {
     // Create user fonts directory if it doesn't exist
     const fontDir = join(homedir(), ".local/share/fonts");
     if (!existsSync(fontDir)) {
       mkdirSync(fontDir, { recursive: true });
     }
 
-    if (config.downloadUrl) {
-      const fileName = config.downloadUrl.split("/").pop() || "font.zip";
+    if (isDefinedString(config.downloadUrl) && config.downloadUrl.length > 0) {
+      const fileName = config.downloadUrl.split("/").pop() ?? "font.zip";
       const downloadPath = join("/tmp", fileName);
 
       await this.commandExecutor.execute(
@@ -204,7 +272,7 @@ export class FontManager {
     }
   }
 
-  async installFont(config: FontConfig): Promise<boolean> {
+  async installFont(config: IFontConfig): Promise<boolean> {
     const toast = await showToast({
       style: Toast.Style.Animated,
       title: `Checking ${config.name}...`,
@@ -232,8 +300,19 @@ export class FontManager {
         case "linux":
           await this.installFontLinux(config);
           break;
-        default:
-          throw new Error(`Unsupported platform: ${this.platform}`);
+        case "aix":
+        case "android":
+        case "freebsd":
+        case "haiku":
+        case "openbsd":
+        case "sunos":
+        case "cygwin":
+        case "netbsd":
+          throw new Error(`Platform ${this.platform} is not supported for font installation`);
+        default: {
+          const exhaustiveCheck: never = this.platform;
+          throw new Error(`Unhandled platform: ${String(exhaustiveCheck)}`);
+        }
       }
 
       toast.style = Toast.Style.Success;
@@ -249,7 +328,7 @@ export class FontManager {
   }
 
   async ensureRequiredFonts(): Promise<void> {
-    const requiredFonts: FontConfig[] = [
+    const requiredFonts: IFontConfig[] = [
       {
         name: "FiraCode Nerd Font",
         fontFamily: "FiraCode Nerd Font Mono", // Exact name Rio config expects

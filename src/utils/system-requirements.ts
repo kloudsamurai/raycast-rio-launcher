@@ -2,7 +2,7 @@ import { showToast, Toast } from "@raycast/api";
 import { platform } from "os";
 import { CommandExecutor } from "./command-executor";
 
-export interface SystemRequirement {
+export interface ISystemRequirement {
   name: string;
   description: string;
   check: () => Promise<boolean>;
@@ -11,8 +11,8 @@ export interface SystemRequirement {
 }
 
 export class SystemRequirementsChecker {
-  private commandExecutor: CommandExecutor;
-  private platform: NodeJS.Platform;
+  private readonly commandExecutor: CommandExecutor;
+  private readonly platform: string;
 
   constructor() {
     this.commandExecutor = new CommandExecutor();
@@ -51,6 +51,14 @@ export class SystemRequirementsChecker {
         } catch {
           return true; // Assume it's available
         }
+      case "aix":
+      case "android":
+      case "freebsd":
+      case "haiku":
+      case "openbsd":
+      case "sunos":
+      case "cygwin":
+      case "netbsd":
       default:
         return true;
     }
@@ -60,8 +68,9 @@ export class SystemRequirementsChecker {
     // Check if terminal supports 256 colors
     try {
       const { stdout } = await this.commandExecutor.execute("tput colors");
-      const colorCount = parseInt(stdout.trim(), 10);
-      return colorCount >= 256;
+      const colorCount: number = parseInt(stdout.trim(), 10);
+      const minColorCount: number = 256;
+      return colorCount >= minColorCount;
     } catch {
       // If tput is not available, assume support
       return true;
@@ -85,15 +94,25 @@ export class SystemRequirementsChecker {
       case "linux":
         // Check for compositor
         try {
-          const compositors = ["picom", "compton", "compiz", "kwin", "mutter"];
+          const compositors: string[] = ["picom", "compton", "compiz", "kwin", "mutter"];
           for (const comp of compositors) {
-            const isRunning = await this.commandExecutor.checkCommand(comp);
-            if (isRunning) return true;
+            const isRunning: boolean = await this.commandExecutor.checkCommand(comp);
+            if (isRunning) {
+              return true;
+            }
           }
           return false;
         } catch {
           return false;
         }
+      case "aix":
+      case "android":
+      case "freebsd":
+      case "haiku":
+      case "openbsd":
+      case "sunos":
+      case "cygwin":
+      case "netbsd":
       default:
         return false;
     }
@@ -123,7 +142,7 @@ export class SystemRequirementsChecker {
 
         toast.style = Toast.Style.Success;
         toast.title = "Transparency support enabled";
-      } catch (error) {
+      } catch {
         toast.style = Toast.Style.Failure;
         toast.title = "Could not enable transparency";
         toast.message = "You may need to manually install a compositor";
@@ -141,30 +160,30 @@ export class SystemRequirementsChecker {
   }
 
   async checkAllRequirements(): Promise<void> {
-    const requirements: SystemRequirement[] = [
+    const requirements: ISystemRequirement[] = [
       {
         name: "Terminal Environment",
         description: "Basic terminal command execution",
-        check: () => this.checkTerminalEnvironment(),
+        check: async () => this.checkTerminalEnvironment(),
         critical: true,
       },
       {
         name: "256 Color Support",
         description: "Terminal supports 256 colors (TERM=xterm-256color)",
-        check: () => this.check256ColorSupport(),
+        check: async () => this.check256ColorSupport(),
         critical: false,
       },
       {
         name: "Graphics Backend",
         description: this.platform === "darwin" ? "Metal support" : "Graphics acceleration",
-        check: () => this.checkGraphicsBackend(),
+        check: async () => this.checkGraphicsBackend(),
         critical: false,
       },
       {
         name: "Window Transparency",
         description: "Compositor support for transparent windows",
-        check: () => this.checkTransparencySupport(),
-        fix: () => this.enableTransparency(),
+        check: async () => this.checkTransparencySupport(),
+        fix: async () => this.enableTransparency(),
         critical: false,
       },
     ];
@@ -174,7 +193,7 @@ export class SystemRequirementsChecker {
       title: "Checking system requirements...",
     });
 
-    const failedRequirements: SystemRequirement[] = [];
+    const failedRequirements: ISystemRequirement[] = [];
 
     for (const req of requirements) {
       toast.message = `Checking ${req.name}...`;
@@ -184,7 +203,7 @@ export class SystemRequirementsChecker {
         failedRequirements.push(req);
 
         // Try to fix if possible
-        if (req.fix) {
+        if (req.fix !== undefined) {
           toast.message = `Fixing ${req.name}...`;
           try {
             await req.fix();
@@ -201,17 +220,17 @@ export class SystemRequirementsChecker {
     }
 
     if (failedRequirements.length > 0) {
-      const criticalFailed = failedRequirements.filter((r) => r.critical);
+      const criticalFailed: ISystemRequirement[] = failedRequirements.filter((r: ISystemRequirement) => r.critical);
 
       if (criticalFailed.length > 0) {
         toast.style = Toast.Style.Failure;
         toast.title = "Critical requirements missing";
-        toast.message = criticalFailed.map((r) => r.name).join(", ");
+        toast.message = criticalFailed.map((r: ISystemRequirement) => r.name).join(", ");
         throw new Error("Critical system requirements not met");
       } else {
         toast.style = Toast.Style.Success;
         toast.title = "System check complete";
-        toast.message = `Some optional features may not work: ${failedRequirements.map((r) => r.name).join(", ")}`;
+        toast.message = `Some optional features may not work: ${failedRequirements.map((r: ISystemRequirement) => r.name).join(", ")}`;
       }
     } else {
       toast.style = Toast.Style.Success;

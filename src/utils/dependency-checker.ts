@@ -3,8 +3,9 @@ import { existsSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import { CommandExecutor } from "./command-executor";
+import { isDefinedString } from "./type-guards";
 
-export interface DependencyConfig {
+export interface IDependencyConfig {
   name: string;
   checkCommand: string;
   installCommand: string;
@@ -12,7 +13,7 @@ export interface DependencyConfig {
 }
 
 export class DependencyChecker {
-  private commandExecutor: CommandExecutor;
+  private readonly commandExecutor: CommandExecutor;
 
   constructor() {
     this.commandExecutor = new CommandExecutor();
@@ -20,7 +21,7 @@ export class DependencyChecker {
 
   async isCommandAvailable(command: string): Promise<boolean> {
     if (command === "rustc" || command === "cargo") {
-      const cargoHome = process.env.CARGO_HOME || join(homedir(), ".cargo");
+      const cargoHome = isDefinedString(process.env.CARGO_HOME) ? process.env.CARGO_HOME : join(homedir(), ".cargo");
       const rustPath = join(cargoHome, "bin", command);
       return existsSync(rustPath);
     }
@@ -28,7 +29,7 @@ export class DependencyChecker {
     return this.commandExecutor.checkCommand(command);
   }
 
-  async checkAndInstall(config: DependencyConfig): Promise<boolean> {
+  async checkAndInstall(config: IDependencyConfig): Promise<boolean> {
     const toast = await showToast({
       style: Toast.Style.Animated,
       title: `Checking ${config.name}...`,

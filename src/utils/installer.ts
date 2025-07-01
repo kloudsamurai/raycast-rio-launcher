@@ -1,28 +1,22 @@
 import { homedir } from "os";
 import { join } from "path";
-import { DependencyChecker } from "./dependency-checker";
-import { CargoPackageManager, CargoPackageConfig } from "./cargo-package-manager";
+import { DependencyChecker, IDependencyConfig } from "./dependency-checker";
+import { CargoPackageManager, ICargoPackageConfig } from "./cargo-package-manager";
 import { RioConfigManager } from "./rio-config-manager";
 import { FontManager } from "./font-manager";
 import { SystemRequirementsChecker } from "./system-requirements";
 import { VoltaManager } from "./volta-manager";
+import { getErrorMessage } from "./type-guards";
 
-export interface DependencyConfig {
-  name: string;
-  checkCommand: string;
-  installCommand: string;
-  installMessage: string;
-}
-
-export { CargoPackageConfig };
+export { ICargoPackageConfig, IDependencyConfig };
 
 export class DependencyInstaller {
-  private dependencyChecker: DependencyChecker;
-  private cargoPackageManager: CargoPackageManager;
-  private rioConfigManager: RioConfigManager;
-  private fontManager: FontManager;
-  private systemRequirementsChecker: SystemRequirementsChecker;
-  private voltaManager: VoltaManager;
+  private readonly dependencyChecker: DependencyChecker;
+  private readonly cargoPackageManager: CargoPackageManager;
+  private readonly rioConfigManager: RioConfigManager;
+  private readonly fontManager: FontManager;
+  private readonly systemRequirementsChecker: SystemRequirementsChecker;
+  private readonly voltaManager: VoltaManager;
 
   constructor() {
     this.dependencyChecker = new DependencyChecker();
@@ -33,7 +27,7 @@ export class DependencyInstaller {
     this.voltaManager = new VoltaManager();
   }
 
-  async checkAndInstallDependency(config: DependencyConfig): Promise<boolean> {
+  async checkAndInstallDependency(config: IDependencyConfig): Promise<boolean> {
     return this.dependencyChecker.checkAndInstall(config);
   }
 
@@ -55,7 +49,7 @@ export class DependencyInstaller {
     });
   }
 
-  async checkAndInstallCargoPackage(config: CargoPackageConfig): Promise<boolean> {
+  async checkAndInstallCargoPackage(config: ICargoPackageConfig): Promise<boolean> {
     return this.cargoPackageManager.installPackage(config);
   }
 
@@ -68,7 +62,7 @@ export class DependencyInstaller {
 
       return true;
     } catch (error) {
-      throw new Error(`Failed to setup Rust toolchain: ${error}`);
+      throw new Error(`Failed to setup Rust toolchain: ${getErrorMessage(error)}`);
     }
   }
 
@@ -92,13 +86,13 @@ export class DependencyInstaller {
     try {
       // Install Volta for Node.js management
       await this.ensureVoltaEnvironment();
-      
+
       // Install Rust toolchain
       await this.ensureRustToolchain();
-      
+
       return true;
     } catch (error) {
-      throw new Error(`Failed to setup development environment: ${error}`);
+      throw new Error(`Failed to setup development environment: ${getErrorMessage(error)}`);
     }
   }
 }

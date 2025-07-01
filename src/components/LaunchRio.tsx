@@ -129,14 +129,14 @@ function LaunchRioComponent(): React.ReactElement {
   // Running processes
   const { data: runningProcesses = [] } = useCachedPromise(
     async () => {
-      if (services !== undefined) {
-        return services.process.getRioProcesses();
+      if (services?.process?.getRioProcesses) {
+        return await services.process.getRioProcesses();
       }
       return [];
     },
     [],
     {
-      execute: services !== undefined,
+      execute: services !== null && services !== undefined && services.process !== null && services.process !== undefined,
       keepPreviousData: true,
     },
   );

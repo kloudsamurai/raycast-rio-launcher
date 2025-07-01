@@ -69,6 +69,11 @@ export default function RioMenuBar(): React.JSX.Element {
   };
 
   const services = getServices();
+  
+  // Debug logging
+  console.log("MenuBar - servicesInitialized:", servicesInitialized);
+  console.log("MenuBar - areServicesInitialized():", areServicesInitialized());
+  console.log("MenuBar - services:", services ? "AVAILABLE" : "NULL");
 
   // Log services error if any
   if (servicesError) {
@@ -95,8 +100,7 @@ export default function RioMenuBar(): React.JSX.Element {
   const { data: processes = [] } = useCachedPromise<RioProcess[]>(
     async (): Promise<RioProcess[]> => {
       try {
-        if (!services?.process) {
-          console.log("ProcessService not available");
+        if (!services?.process?.getRioProcesses) {
           return [];
         }
         return await services.process.getRioProcesses();
@@ -107,7 +111,7 @@ export default function RioMenuBar(): React.JSX.Element {
     },
     [],
     {
-      execute: services !== undefined && services !== null && servicesInitialized === true,
+      execute: services !== null && services !== undefined && services.process !== null && services.process !== undefined,
       keepPreviousData: true,
     },
   );
@@ -116,8 +120,7 @@ export default function RioMenuBar(): React.JSX.Element {
   const { data: sessions = [] } = useCachedPromise<RioSession[]>(
     async (): Promise<RioSession[]> => {
       try {
-        if (!services?.session) {
-          console.log("SessionService not available");
+        if (!services?.session?.getSessions) {
           return [];
         }
         return await services.session.getSessions();
@@ -128,7 +131,7 @@ export default function RioMenuBar(): React.JSX.Element {
     },
     [],
     {
-      execute: services !== undefined && services !== null && servicesInitialized === true,
+      execute: services !== null && services !== undefined && services.session !== null && services.session !== undefined,
       keepPreviousData: true,
     },
   );
@@ -137,8 +140,7 @@ export default function RioMenuBar(): React.JSX.Element {
   const { data: tmuxSessions = [] } = useCachedPromise<IMultiplexerSession[]>(
     async (): Promise<IMultiplexerSession[]> => {
       try {
-        if (!services?.multiplexer) {
-          console.log("MultiplexerService not available");
+        if (!services?.multiplexer?.getTmuxSessions) {
           return [];
         }
         return await services.multiplexer.getTmuxSessions();
@@ -149,7 +151,7 @@ export default function RioMenuBar(): React.JSX.Element {
     },
     [],
     {
-      execute: services !== undefined && services !== null && servicesInitialized === true,
+      execute: services !== null && services !== undefined && services.multiplexer !== null && services.multiplexer !== undefined,
       keepPreviousData: true,
     },
   );

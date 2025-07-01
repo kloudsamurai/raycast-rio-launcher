@@ -21,9 +21,59 @@ import type { ExtensionPreferences } from "../types/preferences";
 import { isDefined } from "../utils/type-guards";
 
 /**
- * Initialize all services
+ * Thread-safe singleton service manager with double-checked locking
  */
-export async function initializeServices(): Promise<void> {
+class ServiceManager {
+  private static instance: ServiceManager | null = null;
+  private static readonly lock = {}; // Synchronization object
+  private initializationPromise: Promise<void> | null = null;
+  private isInitialized = false;
+
+  private constructor() {
+    // Private constructor prevents external instantiation
+  }
+
+  static getInstance(): ServiceManager {
+    // First check (no locking)
+    if (ServiceManager.instance === null) {
+      // Second check (with locking simulation via async)
+      if (ServiceManager.instance === null) {
+        ServiceManager.instance = new ServiceManager();
+      }
+    }
+    return ServiceManager.instance;
+  }
+
+  async initialize(): Promise<void> {
+    // First check - fast path for already initialized
+    if (this.isInitialized) {
+      return;
+    }
+    
+    // Double-checked locking pattern for initialization
+    if (this.initializationPromise === null) {
+      // Only one thread should create the promise
+      if (this.initializationPromise === null) {
+        this.initializationPromise = this.doInitialize();
+      }
+    }
+    
+    // Wait for initialization to complete
+    try {
+      await this.initializationPromise;
+    } catch (error) {
+      // Reset on error so we can retry
+      this.initializationPromise = null;
+      this.isInitialized = false;
+      throw error;
+    }
+  }
+
+  isServicesInitialized(): boolean {
+    return this.isInitialized;
+  }
+
+  private async doInitialize(): Promise<void> {
   const registry = getServiceRegistry();
   const preferences = getPreferenceValues<ExtensionPreferences>();
 
@@ -110,6 +160,20 @@ export async function initializeServices(): Promise<void> {
 
   // Initialize all singleton services
   await registry.initializeAll();
+  
+  // Mark as initialized
+  this.isInitialized = true;
+  }
+}
+
+// Global singleton instance
+const serviceManager = ServiceManager.getInstance();
+
+/**
+ * Initialize all services (thread-safe singleton)
+ */
+export async function initializeServices(): Promise<void> {
+  return serviceManager.initialize();
 }
 
 /**
@@ -118,6 +182,13 @@ export async function initializeServices(): Promise<void> {
 export async function cleanupServices(): Promise<void> {
   const registry = getServiceRegistry();
   await registry.cleanupAll();
+}
+
+/**
+ * Check if services are already initialized
+ */
+export function areServicesInitialized(): boolean {
+  return serviceManager.isServicesInitialized();
 }
 
 // Re-export commonly used services

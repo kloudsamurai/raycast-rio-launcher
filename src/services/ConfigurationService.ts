@@ -610,7 +610,9 @@ export class ConfigurationService extends BaseService implements IConfigurationS
       record2: Record<string, unknown>,
       path: string,
     ): void => {
-      if (!isDefinedObject(record1) || !isDefinedObject(record2)) {
+      if (!isDefinedObject(record1) || !isDefinedObject(record2) || 
+          typeof record1 !== 'object' || typeof record2 !== 'object' ||
+          Array.isArray(record1) || Array.isArray(record2)) {
         return;
       }
       
@@ -635,7 +637,9 @@ export class ConfigurationService extends BaseService implements IConfigurationS
       path: string,
       compareFunc: (obj1: unknown, obj2: unknown, path: string) => void,
     ): void => {
-      if (!isDefinedObject(record1) || !isDefinedObject(record2)) {
+      if (!isDefinedObject(record1) || !isDefinedObject(record2) || 
+          typeof record1 !== 'object' || typeof record2 !== 'object' ||
+          Array.isArray(record1) || Array.isArray(record2)) {
         return;
       }
       
@@ -665,7 +669,9 @@ export class ConfigurationService extends BaseService implements IConfigurationS
     };
 
     const compare = (obj1: unknown, obj2: unknown, path: string = ""): void => {
-      if (!isDefinedObject(obj1) || !isDefinedObject(obj2)) {
+      if (!isDefinedObject(obj1) || !isDefinedObject(obj2) || 
+          typeof obj1 !== 'object' || typeof obj2 !== 'object' ||
+          Array.isArray(obj1) || Array.isArray(obj2)) {
         return;
       }
 

@@ -19,7 +19,7 @@ import { useFrecencySorting, usePromise, useCachedPromise } from "@raycast/utils
 import type { ProcessService } from "../services/ProcessService";
 import type { ProfileService } from "../services/ProfileService";
 import type { ConfigurationService } from "../services/ConfigurationService";
-import { getServiceRegistry } from "../services/base/ServiceRegistry";
+import { getServiceRegistry, areServicesInitialized } from "../services";
 import { useEventBus } from "../services/EventBus";
 import type { IRioProfile } from "../types/rio";
 import type { IRecentItem } from "../types/preferences";
@@ -53,27 +53,53 @@ function LaunchRioComponent(): React.ReactElement {
   const [isLoading, setIsLoading] = useState(false);
   const [searchText, setSearchText] = useState("");
 
-  // Services
-  const { data: services, isLoading: servicesLoading, error: servicesError } = usePromise(async () => {
+  // Services initialization
+  const { data: servicesInitialized, isLoading: servicesLoading, error: servicesError } = usePromise(async () => {
     try {
-      console.log("Starting service initialization...");
       const { initializeServices } = await import("../services");
       await initializeServices();
-      console.log("Services initialized, getting registry...");
-      
-      const registry = getServiceRegistry();
-      const result = {
-        process: await registry.get<ProcessService>("process"),
-        profile: await registry.get<ProfileService>("profile"),
-        config: await registry.get<ConfigurationService>("configuration"),
-      };
-      console.log("Services loaded successfully:", result);
-      return result;
+      return true;
     } catch (error) {
       console.error("Service initialization failed:", error);
       throw error;
     }
   });
+
+  // Get services directly from registry (maintains prototype chain)
+  const getServices = (): {
+    process: ProcessService;
+    profile: ProfileService;
+    config: ConfigurationService;
+  } | null => {
+    // Check both initialization status and servicesInitialized flag
+    if (!servicesInitialized || !areServicesInitialized()) {
+      return null;
+    }
+    
+    const registry = getServiceRegistry();
+    
+    // Use tryGetSync to safely get services
+    const processService = registry.tryGetSync<ProcessService>("process");
+    const profileService = registry.tryGetSync<ProfileService>("profile");
+    const configService = registry.tryGetSync<ConfigurationService>("configuration");
+    
+    if (!processService || !profileService || !configService) {
+      return null;
+    }
+    
+    return {
+      process: processService,
+      profile: profileService,
+      config: configService,
+    };
+  };
+
+  const services = getServices();
+  
+  // Debug logging
+  console.log("LaunchRio - servicesInitialized:", servicesInitialized);
+  console.log("LaunchRio - areServicesInitialized():", areServicesInitialized());
+  console.log("LaunchRio - services:", services ? "AVAILABLE" : "NULL");
 
   // Profiles with caching
   const { data: profiles = [], revalidate: reloadProfiles } = useCachedPromise(
@@ -118,11 +144,14 @@ function LaunchRioComponent(): React.ReactElement {
 
   // Build launch options using useMemo for stable reference
   const launchOptionsMemo = useMemo(() => {
+    if (!services) {
+      return [];
+    }
     return buildLaunchOptions();
-  }, [profiles, recentDirectories, runningProcesses]);
+  }, [profiles, recentDirectories, runningProcesses, services]);
 
   // For now, skip frecency sorting to get it working
-  const sortedOptions = launchOptionsMemo;
+  const sortedOptions = launchOptionsMemo || [];
   const visitItem = (_id: string): Promise<void> => Promise.resolve();
 
   // Add to recent directories
@@ -180,15 +209,7 @@ function LaunchRioComponent(): React.ReactElement {
 
     try {
       const workingDirectory = await getWorkingDirectory();
-      console.log("Working directory:", workingDirectory);
-      
       const defaultProfile = await services.profile.getDefaultProfile();
-      console.log("Default profile:", defaultProfile);
-
-      console.log("Launching Rio with:", {
-        workingDirectory,
-        profile: isDefinedObject(defaultProfile) ? defaultProfile.id : undefined,
-      });
 
       await services.process.launchRio({
         workingDirectory,
@@ -324,12 +345,12 @@ function LaunchRioComponent(): React.ReactElement {
       {
         id: "manage-sessions",
         title: "Manage Sessions",
-        subtitle: `${runningProcesses.length} active sessions`,
+        subtitle: `${runningProcesses?.length || 0} active sessions`,
         icon: Icon.Window,
         color: Color.Purple,
         type: "manage-sessions",
         keywords: ["session", "window", "running"],
-        accessories: [{ text: runningProcesses.length.toString() }],
+        accessories: [{ text: (runningProcesses?.length || 0).toString() }],
       },
 
       // Launch history
@@ -345,7 +366,7 @@ function LaunchRioComponent(): React.ReactElement {
     ];
 
     // Add profile options
-    for (const profile of profiles) {
+    for (const profile of profiles || []) {
       options.push({
         id: profile.id,
         title: `Launch with ${profile.name}`,
@@ -362,7 +383,7 @@ function LaunchRioComponent(): React.ReactElement {
     }
 
     // Add recent directories
-    if (recentDirectories.length > 0) {
+    if (recentDirectories && recentDirectories.length > 0) {
       const MAX_RECENT_TO_SHOW = 5;
       for (const recent of recentDirectories.slice(0, MAX_RECENT_TO_SHOW)) {
         options.push({
@@ -426,8 +447,16 @@ function LaunchRioComponent(): React.ReactElement {
       searchText={searchText}
       onSearchTextChange={setSearchText}
     >
-      {((sortedOptions || launchOptionsMemo) || []).map((option: ILaunchOption) => (
+      {sortedOptions.length === 0 ? (
+        <List.Item 
+          title="No launch options available" 
+          subtitle="Services may still be initializing..."
+          icon={Icon.ExclamationMark}
+        />
+      ) : (
+        sortedOptions.map((option: ILaunchOption) => (
         <List.Item
+          key={option.id}
           accessories={option.accessories}
           actions={
             <ActionPanel>
@@ -530,7 +559,7 @@ function LaunchRioComponent(): React.ReactElement {
           subtitle={option.subtitle}
           title={option.title}
         />
-      ))}
+      )))}
     </List>
   );
 }

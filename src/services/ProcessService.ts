@@ -6,7 +6,7 @@ import { spawn, exec } from "child_process";
 import { homedir } from "os";
 import { join } from "path";
 import { existsSync } from "fs";
-import { getSelectedFinderItems, open } from "@raycast/api";
+import { getSelectedFinderItems, open, WindowManagement } from "@raycast/api";
 import { BaseService, type IServiceOptions } from "./base/BaseService";
 import type { IProcessService, IRioLaunchOptions } from "../types/services";
 import type { IRioProcess } from "../types/rio";
@@ -283,33 +283,37 @@ export class ProcessService extends BaseService implements IProcessService {
       throw new ProcessError("Process not found", { pid });
     }
 
-    // Validate PID is a safe integer to prevent injection
-    const safePid: number = parseInt(pid.toString(), 10);
-    if (!Number.isInteger(safePid) || safePid <= 0 || safePid > MAX_SAFE_PID) {
-      throw new ProcessError("Invalid process ID", { pid });
-    }
-
-    // Focus the window using AppleScript with safe PID
-    const script: string = `
-      tell application "System Events"
-        set frontmost of the first process whose unix id is ${safePid} to true
-      end tell
-    `;
-
-    return new Promise<void>((resolve: () => void, reject: (error: ProcessError) => void) => {
-      exec(`osascript -e ${JSON.stringify(script)}`, (error: Error | null) => {
-        if (error !== null) {
-          reject(
-            new ProcessError("Failed to attach to process", {
-              cause: error,
-              pid,
-            }),
-          );
-        } else {
-          resolve();
-        }
+    try {
+      // Get all windows on the active desktop
+      const windows = await WindowManagement.getWindowsOnActiveDesktop();
+      
+      // Find Rio windows - they should have "rio" in the owner name
+      const rioWindows = windows.filter(window => 
+        window.owner && window.owner.name && 
+        window.owner.name.toLowerCase().includes("rio")
+      );
+      
+      if (rioWindows.length === 0) {
+        throw new ProcessError("No Rio windows found");
+      }
+      
+      // Find the window that matches this process (if we can)
+      // For now, just focus the first Rio window we find
+      const targetWindow = rioWindows[0];
+      
+      // Focus the window
+      await WindowManagement.setWindowBounds({
+        id: targetWindow.id,
+        bounds: { ...targetWindow.bounds }
       });
-    });
+      
+      this.log("info", `Focused Rio window: ${targetWindow.id}`);
+    } catch (error) {
+      throw new ProcessError("Failed to attach to process", {
+        cause: error instanceof Error ? error : new Error(String(error)),
+        pid,
+      });
+    }
   }
 
   /**

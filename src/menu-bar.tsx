@@ -5,7 +5,7 @@
 import React, { useState } from "react";
 import { MenuBarExtra, showHUD, open, showToast, Toast, Icon, Color, getPreferenceValues } from "@raycast/api";
 import { useCachedPromise } from "@raycast/utils";
-import { getServiceRegistry } from "./services/base/ServiceRegistry";
+import { getServiceRegistry, areServicesInitialized } from "./services";
 import type { ProcessService } from "./services/ProcessService";
 import type { SessionService } from "./services/SessionService";
 import type { MultiplexerService } from "./services/MultiplexerService";
@@ -18,26 +18,18 @@ export default function RioMenuBar(): React.JSX.Element {
   const preferences = getPreferenceValues<ExtensionPreferences>();
   const [isLoading, setIsLoading] = useState(true);
 
-  // Initialize services
-  const { data: services, error: servicesError } = useCachedPromise(
+  // Initialize services (cache only initialization status, not service instances)
+  const { data: servicesInitialized, error: servicesError } = useCachedPromise(
     async () => {
       try {
-        console.log("Menu bar: Starting service initialization...");
         // Initialize services first
         const { initializeServices } = await import("./services");
         await initializeServices();
         
-        const registry = getServiceRegistry();
-        const result = {
-          process: await registry.get<ProcessService>("process"),
-          session: await registry.get<SessionService>("session"),
-          multiplexer: await registry.get<MultiplexerService>("multiplexer"),
-        };
-        console.log("Menu bar: Services loaded:", result);
-        return result;
+        return true; // Only cache initialization status, not service instances
       } catch (error) {
         console.error("Menu bar: Failed to initialize services:", error);
-        return null;
+        return false;
       }
     },
     [],
@@ -47,13 +39,44 @@ export default function RioMenuBar(): React.JSX.Element {
     },
   );
 
+  // Get services directly from registry (maintains prototype chain)
+  const getServices = (): {
+    process: ProcessService;
+    session: SessionService;
+    multiplexer: MultiplexerService;
+  } | null => {
+    // Check both initialization status and servicesInitialized flag
+    if (!servicesInitialized || !areServicesInitialized()) {
+      return null;
+    }
+    
+    const registry = getServiceRegistry();
+    
+    // Use tryGetSync to safely get services
+    const processService = registry.tryGetSync<ProcessService>("process");
+    const sessionService = registry.tryGetSync<SessionService>("session");
+    const multiplexerService = registry.tryGetSync<MultiplexerService>("multiplexer");
+    
+    if (!processService || !sessionService || !multiplexerService) {
+      return null;
+    }
+    
+    return {
+      process: processService,
+      session: sessionService,
+      multiplexer: multiplexerService,
+    };
+  };
+
+  const services = getServices();
+
   // Log services error if any
   if (servicesError) {
     console.error("Menu bar services error:", servicesError);
   }
 
-  // If services failed to load, show error state
-  if (!services && !isLoading) {
+  // If services failed to initialize, show error state
+  if (!servicesInitialized && !isLoading) {
     return (
       <MenuBarExtra icon={Icon.ExclamationMark} title="Rio Error">
         <MenuBarExtra.Item title="Failed to initialize Rio services" />
@@ -84,7 +107,7 @@ export default function RioMenuBar(): React.JSX.Element {
     },
     [],
     {
-      execute: services !== undefined && services !== null,
+      execute: services !== undefined && services !== null && servicesInitialized === true,
       keepPreviousData: true,
     },
   );
@@ -97,7 +120,7 @@ export default function RioMenuBar(): React.JSX.Element {
           console.log("SessionService not available");
           return [];
         }
-        return await services.session.getActiveSessions();
+        return await services.session.getSessions();
       } catch (error) {
         console.error("Failed to get sessions:", error);
         return [];
@@ -105,7 +128,7 @@ export default function RioMenuBar(): React.JSX.Element {
     },
     [],
     {
-      execute: services !== undefined && services !== null,
+      execute: services !== undefined && services !== null && servicesInitialized === true,
       keepPreviousData: true,
     },
   );
@@ -126,7 +149,7 @@ export default function RioMenuBar(): React.JSX.Element {
     },
     [],
     {
-      execute: services !== undefined && services !== null,
+      execute: services !== undefined && services !== null && servicesInitialized === true,
       keepPreviousData: true,
     },
   );
@@ -237,7 +260,7 @@ export default function RioMenuBar(): React.JSX.Element {
     }
   };
 
-  if (isLoading || services === null || services === undefined) {
+  if (isLoading || !servicesInitialized || services === null || services === undefined) {
     return <MenuBarExtra isLoading />;
   }
 

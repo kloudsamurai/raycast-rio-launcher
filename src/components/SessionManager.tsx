@@ -19,10 +19,10 @@ import {
 import { useCachedPromise } from "@raycast/utils";
 import type { ProcessService } from "../services/ProcessService";
 import type { SessionService } from "../services/SessionService";
-import { getServiceRegistry } from "../services/base/ServiceRegistry";
+import { getServiceRegistry, areServicesInitialized } from "../services";
 import { useEventBus } from "../services/EventBus";
 import type { RioProcess, RioSession } from "../types/rio";
-import type { ProcessInfo } from "../types/system";
+import type { IProcessInfo } from "../types/system";
 import { formatDistanceToNow } from "../utils/date";
 import { isDefinedString, isDefinedObject } from "../utils/type-guards";
 
@@ -31,22 +31,45 @@ export function SessionManager(): React.ReactElement {
   const eventBus = useEventBus();
   const [selectedProcess, setSelectedProcess] = useState<string | null>(null);
 
-  // Load services
-  const { data: services } = useCachedPromise(async () => {
+  // Initialize services
+  const { data: servicesInitialized } = useCachedPromise(async () => {
     try {
       const { initializeServices } = await import("../services");
       await initializeServices();
-      
-      const registry = getServiceRegistry();
-      return {
-        process: await registry.get<ProcessService>("process"),
-        session: await registry.get<SessionService>("session"),
-      };
+      return true;
     } catch (error) {
       console.error("Failed to initialize services in SessionManager:", error);
       throw error;
     }
   });
+
+  // Get services directly from registry (maintains prototype chain)
+  const getServices = (): {
+    process: ProcessService;
+    session: SessionService;
+  } | null => {
+    // Check both initialization status and servicesInitialized flag
+    if (!servicesInitialized || !areServicesInitialized()) {
+      return null;
+    }
+    
+    const registry = getServiceRegistry();
+    
+    // Use tryGetSync to safely get services
+    const processService = registry.tryGetSync<ProcessService>("process");
+    const sessionService = registry.tryGetSync<SessionService>("session");
+    
+    if (!processService || !sessionService) {
+      return null;
+    }
+    
+    return {
+      process: processService,
+      session: sessionService,
+    };
+  };
+
+  const services = getServices();
 
   // Load processes and sessions
   const {
@@ -68,8 +91,8 @@ export function SessionManager(): React.ReactElement {
   });
 
   // Get process info for selected process
-  const { data: processInfo } = useCachedPromise<ProcessInfo | null>(
-    async (): Promise<ProcessInfo | null> => {
+  const { data: processInfo } = useCachedPromise<IProcessInfo | null>(
+    async (): Promise<IProcessInfo | null> => {
       if (!isDefinedObject(services) || !isDefinedString(selectedProcess)) {
         return null;
       }

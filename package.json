@@ -71,6 +71,40 @@
       ]
     }
   ],
+  "preferences": [
+    {
+      "name": "enableAISuggestions",
+      "type": "checkbox",
+      "label": "Enable AI Suggestions",
+      "description": "Enable AI-powered suggestions for commands and configurations",
+      "default": false,
+      "required": false
+    },
+    {
+      "name": "enableTelemetry",
+      "type": "checkbox", 
+      "label": "Enable Telemetry",
+      "description": "Help improve the extension by sending anonymous usage data",
+      "default": false,
+      "required": false
+    },
+    {
+      "name": "enableDebugMode",
+      "type": "checkbox",
+      "label": "Enable Debug Mode",
+      "description": "Show additional debugging information in logs",
+      "default": false,
+      "required": false
+    },
+    {
+      "name": "showCountInMenuBar",
+      "type": "checkbox",
+      "label": "Show Count in Menu Bar",
+      "description": "Display the number of running Rio processes in the menu bar",
+      "default": true,
+      "required": false
+    }
+  ],
   "dependencies": {
     "@iarna/toml": "^2.2.5",
     "@raycast/api": "^1.100.3",

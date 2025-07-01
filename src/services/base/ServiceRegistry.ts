@@ -138,6 +138,17 @@ export class ServiceRegistry {
   }
 
   /**
+   * Try to get a service synchronously without throwing
+   */
+  tryGetSync<T extends BaseService>(name: string): T | null {
+    try {
+      return this.getSync<T>(name);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Safely get a service that may not be initialized
    */
   tryGetSync<T extends BaseService>(name: string): T | null {
@@ -239,23 +250,21 @@ export class ServiceRegistry {
       // Create service instance
       const service = await registration.factory();
       // Atomic update: assign service instance
-      Object.assign(registration, { service });
+      registration.service = service;
 
       // Initialize the service
       await service.initialize();
     } catch (error) {
       // Atomic update: reset service to null on error
-      Object.assign(registration, { service: null });
+      registration.service = null;
       throw new RioLauncherError(`Failed to initialize service '${name}'`, "SERVICE_INITIALIZATION_FAILED", {
         cause: error as Error,
         context: { service: name },
       });
     } finally {
       // Atomic update: reset initialization state
-      Object.assign(registration, {
-        initializing: false,
-        initPromise: null,
-      });
+      registration.initializing = false;
+      registration.initPromise = null;
     }
   }
 

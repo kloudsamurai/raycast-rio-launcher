@@ -7,7 +7,16 @@
 
 /* eslint-disable @typescript-eslint/ban-types */
 
-type ExtensionPreferences = {}
+type ExtensionPreferences = {
+  /** undefined - Enable AI-powered suggestions for commands and configurations */
+  "enableAISuggestions": boolean,
+  /** undefined - Help improve the extension by sending anonymous usage data */
+  "enableTelemetry": boolean,
+  /** undefined - Show additional debugging information in logs */
+  "enableDebugMode": boolean,
+  /** undefined - Display the number of running Rio processes in the menu bar */
+  "showCountInMenuBar": boolean
+}
 
 /** Preferences accessible in all the extension's commands */
 declare type Preferences = ExtensionPreferences

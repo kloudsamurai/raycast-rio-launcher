@@ -54,16 +54,25 @@ function LaunchRioComponent(): React.ReactElement {
   const [searchText, setSearchText] = useState("");
 
   // Services
-  const { data: services, isLoading: servicesLoading } = usePromise(async () => {
-    const { initializeServices } = await import("../services");
-    await initializeServices();
-    
-    const registry = getServiceRegistry();
-    return {
-      process: await registry.get<ProcessService>("process"),
-      profile: await registry.get<ProfileService>("profile"),
-      config: await registry.get<ConfigurationService>("configuration"),
-    };
+  const { data: services, isLoading: servicesLoading, error: servicesError } = usePromise(async () => {
+    try {
+      console.log("Starting service initialization...");
+      const { initializeServices } = await import("../services");
+      await initializeServices();
+      console.log("Services initialized, getting registry...");
+      
+      const registry = getServiceRegistry();
+      const result = {
+        process: await registry.get<ProcessService>("process"),
+        profile: await registry.get<ProfileService>("profile"),
+        config: await registry.get<ConfigurationService>("configuration"),
+      };
+      console.log("Services loaded successfully:", result);
+      return result;
+    } catch (error) {
+      console.error("Service initialization failed:", error);
+      throw error;
+    }
   });
 
   // Profiles with caching
@@ -106,6 +115,15 @@ function LaunchRioComponent(): React.ReactElement {
     },
   );
 
+
+  // Build launch options using useMemo for stable reference
+  const launchOptionsMemo = useMemo(() => {
+    return buildLaunchOptions();
+  }, [profiles, recentDirectories, runningProcesses]);
+
+  // For now, skip frecency sorting to get it working
+  const sortedOptions = launchOptionsMemo;
+  const visitItem = (_id: string): Promise<void> => Promise.resolve();
 
   // Add to recent directories
   const addToRecentDirectories = useCallback(
@@ -162,7 +180,15 @@ function LaunchRioComponent(): React.ReactElement {
 
     try {
       const workingDirectory = await getWorkingDirectory();
+      console.log("Working directory:", workingDirectory);
+      
       const defaultProfile = await services.profile.getDefaultProfile();
+      console.log("Default profile:", defaultProfile);
+
+      console.log("Launching Rio with:", {
+        workingDirectory,
+        profile: isDefinedObject(defaultProfile) ? defaultProfile.id : undefined,
+      });
 
       await services.process.launchRio({
         workingDirectory,
@@ -193,9 +219,11 @@ function LaunchRioComponent(): React.ReactElement {
         return;
       }
 
-      visitItem(profile.id).catch(() => {
-        console.error("Failed to track frecency for profile");
-      });
+      try {
+        await visitItem(profile.id);
+      } catch (error) {
+        console.error("Failed to track frecency for profile:", error);
+      }
       setIsLoading(true);
 
       const toast = await showToast({
@@ -229,7 +257,7 @@ function LaunchRioComponent(): React.ReactElement {
         setIsLoading(false);
       }
     },
-    [services, getWorkingDirectory, visitItem, pop, addToRecentDirectories],
+    [services, getWorkingDirectory, pop, addToRecentDirectories, visitItem],
   );
 
   // Launch in directory
@@ -353,68 +381,6 @@ function LaunchRioComponent(): React.ReactElement {
     return options;
   }
 
-  // Build launch options using useMemo for stable reference
-  const launchOptionsMemo = useMemo(() => {
-    return buildLaunchOptions();
-  }, [profiles, recentDirectories, runningProcesses]);
-
-  // For now, skip frecency sorting to get it working
-  const sortedOptions = launchOptionsMemo;
-  const visitItem = (_id: string) => Promise.resolve();
-
-  // Create handler without using visitItem directly
-  const createOptionHandler = (visitItemFn: (id: string) => Promise<void>) => {
-    return async (option: ILaunchOption) => {
-      switch (option.type) {
-        case "quick-launch":
-          await handleQuickLaunch();
-          break;
-        case "pick-directory":
-          await handleLaunchInDirectory(homedir());
-          break;
-        case "manage-sessions":
-          push(<SessionManager />);
-          break;
-        case "launch-history":
-          push(
-            <LaunchHistory
-              history={recentDirectories}
-              onSelect={async (item: IRecentItem) => {
-                if (services) {
-                  await services.process.launchRio({
-                    workingDirectory: item.value,
-                  });
-                  await addToRecentDirectories(item.value);
-                  pop();
-                }
-              }}
-            />,
-          );
-          break;
-        case "profile":
-          if (option.profileId) {
-            const profile = profiles.find((p) => p.id === option.profileId);
-            if (profile) {
-              visitItemFn(profile.id).catch(() => {
-                console.error("Failed to track frecency");
-              });
-              await handleLaunchWithProfile(profile);
-            }
-          }
-          break;
-        case "recent":
-          if (option.directory && services) {
-            await services.process.launchRio({
-              workingDirectory: option.directory,
-            });
-            await addToRecentDirectories(option.directory);
-            pop();
-          }
-          break;
-      }
-    };
-  };
-
   // Event listeners
   useEffect(() => {
     const unsubscribe = eventBus.on("profile:created", () => {
@@ -429,17 +395,33 @@ function LaunchRioComponent(): React.ReactElement {
     return <List searchBarPlaceholder="Loading..." isLoading />;
   }
 
+  if (servicesError) {
+    return (
+      <List>
+        <List.Item 
+          title="Failed to initialize services" 
+          subtitle={servicesError.message}
+          icon={Icon.ExclamationMark}
+        />
+      </List>
+    );
+  }
+
+  if (!services) {
+    return (
+      <List>
+        <List.Item 
+          title="Services not available" 
+          subtitle="Unable to load Rio services"
+          icon={Icon.ExclamationMark}
+        />
+      </List>
+    );
+  }
+
   return (
     <List
       isLoading={isLoading}
-      searchBarAccessory={
-        <List.Dropdown tooltip="Filter by type" storeValue onChange={() => {}}>
-          <List.Dropdown.Item title="All" value="all" />
-          <List.Dropdown.Item title="Profiles" value="profiles" />
-          <List.Dropdown.Item title="Recent" value="recent" />
-          <List.Dropdown.Item title="Sessions" value="sessions" />
-        </List.Dropdown>
-      }
       searchBarPlaceholder="Search launch options..."
       searchText={searchText}
       onSearchTextChange={setSearchText}

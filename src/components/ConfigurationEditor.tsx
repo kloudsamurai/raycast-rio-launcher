@@ -34,9 +34,10 @@ const DEFAULT_FONT_SIZE = 14;
 
 // Helper function to load services
 async function loadServices(): Promise<{ config: ConfigurationService; theme: ThemeService }> {
+  const { initializeServices } = await import("../services");
+  await initializeServices();
+  
   const registry = getServiceRegistry();
-  await registry.initializeAll();
-
   return {
     config: await registry.get<ConfigurationService>("configuration"),
     theme: await registry.get<ThemeService>("theme"),

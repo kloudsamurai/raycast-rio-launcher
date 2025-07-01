@@ -2,7 +2,7 @@ import React from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ConfigurationEditor } from "./components/ConfigurationEditor";
 
-export default function ConfigureRio(): React.ReactElement {
+export default function ConfigureRioCommand(): React.ReactElement {
   return (
     <ErrorBoundary
       recovery={{

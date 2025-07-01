@@ -19,21 +19,24 @@ export default function RioMenuBar(): React.JSX.Element {
   const [isLoading, setIsLoading] = useState(true);
 
   // Initialize services
-  const { data: services } = useCachedPromise(
+  const { data: services, error: servicesError } = useCachedPromise(
     async () => {
-      const registry = getServiceRegistry();
-
       try {
-        // Initialize all services
-        await registry.initializeAll();
-
-        return {
+        console.log("Menu bar: Starting service initialization...");
+        // Initialize services first
+        const { initializeServices } = await import("./services");
+        await initializeServices();
+        
+        const registry = getServiceRegistry();
+        const result = {
           process: await registry.get<ProcessService>("process"),
           session: await registry.get<SessionService>("session"),
           multiplexer: await registry.get<MultiplexerService>("multiplexer"),
         };
+        console.log("Menu bar: Services loaded:", result);
+        return result;
       } catch (error) {
-        console.error("Failed to initialize services:", error);
+        console.error("Menu bar: Failed to initialize services:", error);
         return null;
       }
     },
@@ -44,32 +47,86 @@ export default function RioMenuBar(): React.JSX.Element {
     },
   );
 
+  // Log services error if any
+  if (servicesError) {
+    console.error("Menu bar services error:", servicesError);
+  }
+
+  // If services failed to load, show error state
+  if (!services && !isLoading) {
+    return (
+      <MenuBarExtra icon={Icon.ExclamationMark} title="Rio Error">
+        <MenuBarExtra.Item title="Failed to initialize Rio services" />
+        <MenuBarExtra.Item
+          title="Try Again"
+          onAction={() => {
+            // Force reload
+            window.location.reload();
+          }}
+        />
+      </MenuBarExtra>
+    );
+  }
+
   // Get running processes
   const { data: processes = [] } = useCachedPromise<RioProcess[]>(
-    async (): Promise<RioProcess[]> => services?.process.getRioProcesses() ?? [],
+    async (): Promise<RioProcess[]> => {
+      try {
+        if (!services?.process) {
+          console.log("ProcessService not available");
+          return [];
+        }
+        return await services.process.getRioProcesses();
+      } catch (error) {
+        console.error("Failed to get Rio processes:", error);
+        return [];
+      }
+    },
     [],
     {
-      execute: services !== undefined,
+      execute: services !== undefined && services !== null,
       keepPreviousData: true,
     },
   );
 
   // Get sessions
   const { data: sessions = [] } = useCachedPromise<RioSession[]>(
-    async (): Promise<RioSession[]> => services?.session.getSessions() ?? [],
+    async (): Promise<RioSession[]> => {
+      try {
+        if (!services?.session) {
+          console.log("SessionService not available");
+          return [];
+        }
+        return await services.session.getActiveSessions();
+      } catch (error) {
+        console.error("Failed to get sessions:", error);
+        return [];
+      }
+    },
     [],
     {
-      execute: services !== undefined,
+      execute: services !== undefined && services !== null,
       keepPreviousData: true,
     },
   );
 
   // Get multiplexer sessions
   const { data: tmuxSessions = [] } = useCachedPromise<IMultiplexerSession[]>(
-    async (): Promise<IMultiplexerSession[]> => services?.multiplexer.getSessions("tmux") ?? [],
+    async (): Promise<IMultiplexerSession[]> => {
+      try {
+        if (!services?.multiplexer) {
+          console.log("MultiplexerService not available");
+          return [];
+        }
+        return await services.multiplexer.getTmuxSessions();
+      } catch (error) {
+        console.error("Failed to get tmux sessions:", error);
+        return [];
+      }
+    },
     [],
     {
-      execute: services !== undefined,
+      execute: services !== undefined && services !== null,
       keepPreviousData: true,
     },
   );
@@ -195,15 +252,6 @@ export default function RioMenuBar(): React.JSX.Element {
           onAction={() => {
             handleLaunchRio().catch((error: unknown) => {
               console.error("Failed to launch Rio:", getErrorMessage(error));
-            });
-          }}
-        />
-        <MenuBarExtra.Item
-          icon={Icon.Wand}
-          title="Launch Advanced..."
-          onAction={() => {
-            open("raycast://extensions/cyrup-ai/rio-launcher/launch-advanced").catch((error: unknown) => {
-              console.error("Failed to open launch advanced:", getErrorMessage(error));
             });
           }}
         />

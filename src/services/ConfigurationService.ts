@@ -610,6 +610,10 @@ export class ConfigurationService extends BaseService implements IConfigurationS
       record2: Record<string, unknown>,
       path: string,
     ): void => {
+      if (!isDefinedObject(record1) || !isDefinedObject(record2)) {
+        return;
+      }
+      
       for (const key in record1) {
         if (Object.prototype.hasOwnProperty.call(record1, key)) {
           const currentPath: string = path.length > 0 ? `${path}.${key}` : key;
@@ -631,6 +635,10 @@ export class ConfigurationService extends BaseService implements IConfigurationS
       path: string,
       compareFunc: (obj1: unknown, obj2: unknown, path: string) => void,
     ): void => {
+      if (!isDefinedObject(record1) || !isDefinedObject(record2)) {
+        return;
+      }
+      
       for (const key in record2) {
         if (Object.prototype.hasOwnProperty.call(record2, key)) {
           const currentPath: string = path.length > 0 ? `${path}.${key}` : key;

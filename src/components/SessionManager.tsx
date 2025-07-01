@@ -33,11 +33,19 @@ export function SessionManager(): React.ReactElement {
 
   // Load services
   const { data: services } = useCachedPromise(async () => {
-    const registry = getServiceRegistry();
-    return {
-      process: await registry.get<ProcessService>("process"),
-      session: await registry.get<SessionService>("session"),
-    };
+    try {
+      const { initializeServices } = await import("../services");
+      await initializeServices();
+      
+      const registry = getServiceRegistry();
+      return {
+        process: await registry.get<ProcessService>("process"),
+        session: await registry.get<SessionService>("session"),
+      };
+    } catch (error) {
+      console.error("Failed to initialize services in SessionManager:", error);
+      throw error;
+    }
   });
 
   // Load processes and sessions

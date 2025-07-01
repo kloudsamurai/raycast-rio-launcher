@@ -6,7 +6,7 @@ import { spawn, exec } from "child_process";
 import { homedir } from "os";
 import { join } from "path";
 import { existsSync } from "fs";
-import { getSelectedFinderItems } from "@raycast/api";
+import { getSelectedFinderItems, open } from "@raycast/api";
 import { BaseService, type IServiceOptions } from "./base/BaseService";
 import type { IProcessService, IRioLaunchOptions } from "../types/services";
 import type { IRioProcess } from "../types/rio";
@@ -98,38 +98,42 @@ export class ProcessService extends BaseService implements IProcessService {
 
         // Build launch arguments
         const args = await this.buildLaunchArgs(options);
-        const env = await this.buildEnvironment(options);
         const cwd = await this.getWorkingDirectory(options);
 
         // Log launch details
         this.log("info", `Launching Rio from ${rioPath}`, {
           args,
           cwd,
-          env: Object.keys(env).filter((k: string) => !k.includes("SECRET")),
         });
 
-        // Spawn Rio process
+        // Rio is a CLI binary, not a macOS .app bundle, so we use spawn
+        const env = await this.buildEnvironment(options);
         const childProcess = spawn(rioPath, args, {
           cwd,
           env,
           detached: true,
-          stdio: "ignore",
+          stdio: 'ignore',
         });
 
-        // Handle spawn errors
-        childProcess.on("error", (error: Error) => {
-          this.log("error", "Failed to spawn Rio process", error);
-          throw new ProcessError("Failed to launch Rio", {
-            cause: error,
-            command: rioPath,
+        if (childProcess.error) {
+          throw new ProcessError("Failed to spawn Rio process", {
+            cause: childProcess.error,
           });
-        });
+        }
 
-        // Unref to allow parent to exit
+        if (!childProcess.pid) {
+          throw new ProcessError("Rio process did not start (no PID)");
+        }
+
         childProcess.unref();
+        this.log("info", `Rio launched with PID: ${childProcess.pid}`);
+
+        this.log("info", "Rio launched successfully");
+        
+        // Use the actual PID from the child process
+        const processPid = childProcess.pid;
 
         // Create Rio process object
-        const processPid: number = childProcess.pid ?? 0;
         const rioProcess: IRioProcess = {
           pid: processPid,
           windowId: `rio-${processPid}`,
@@ -148,19 +152,17 @@ export class ProcessService extends BaseService implements IProcessService {
         // Start monitoring
         this.startProcessMonitoring(rioProcess);
 
-        // Emit event with error handling
+        // Emit event
         const eventBus = this.eventBus;
-        // eslint-disable-next-line @typescript-eslint/no-confusing-void-expression
-        const launchPromise: Promise<void> = eventBus.emit("rio:launched", { process: rioProcess });
-        const launchErrorHandler = (error: unknown): void => {
+        try {
+          eventBus.emit("rio:launched", { process: rioProcess });
+        } catch (error: unknown) {
           if (error instanceof Error) {
             this.log("error", "Failed to emit rio:launched event", error);
           } else {
             this.log("error", "Failed to emit rio:launched event", new Error(String(error)));
           }
-        };
-        const _launchCatch: Promise<void> = launchPromise.catch(launchErrorHandler);
-        // Explicitly ignore the promise
+        }
 
         // Track telemetry
         await this.trackEvent("launch", {
@@ -250,19 +252,17 @@ export class ProcessService extends BaseService implements IProcessService {
           this.processMonitors.delete(pid);
         }
 
-        // Emit event with error handling
+        // Emit event
         const eventBusRef = this.eventBus;
-        // eslint-disable-next-line @typescript-eslint/no-confusing-void-expression
-        const terminationPromise: Promise<void> = eventBusRef.emit("rio:terminated", { pid });
-        const terminationErrorHandler = (error: unknown): void => {
+        try {
+          eventBusRef.emit("rio:terminated", { pid });
+        } catch (error: unknown) {
           if (error instanceof Error) {
             this.log("error", "Failed to emit rio:terminated event", error);
           } else {
             this.log("error", "Failed to emit rio:terminated event", new Error(String(error)));
           }
-        };
-        const _terminationCatch: Promise<void> = terminationPromise.catch(terminationErrorHandler);
-        // Explicitly ignore the promise
+        }
 
         this.log("info", `Rio process ${pid} terminated`);
       } catch (error: unknown) {
@@ -563,22 +563,20 @@ export class ProcessService extends BaseService implements IProcessService {
           clearInterval(checkInterval);
           this.processMonitors.delete(rioProcess.pid);
 
-          // Emit event with error handling
+          // Emit event
           const eventBusInstance = this.eventBus;
-          // eslint-disable-next-line @typescript-eslint/no-confusing-void-expression
-          const monitoringPromise: Promise<void> = eventBusInstance.emit("rio:terminated", {
-            pid: rioProcess.pid,
-            exitCode: 0,
-          });
-          const monitoringErrorHandler = (emitError: unknown): void => {
+          try {
+            eventBusInstance.emit("rio:terminated", {
+              pid: rioProcess.pid,
+              exitCode: 0,
+            });
+          } catch (emitError: unknown) {
             if (emitError instanceof Error) {
               this.log("error", "Failed to emit rio:terminated event", emitError);
             } else {
               this.log("error", "Failed to emit rio:terminated event", new Error(String(emitError)));
             }
-          };
-          const _monitoringCatch: Promise<void> = monitoringPromise.catch(monitoringErrorHandler);
-          // Explicitly ignore the promise
+          }
         }
       })().catch(() => {
         // Ignore async errors in monitoring

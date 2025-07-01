@@ -7,7 +7,7 @@ import { EventEmitter } from "events";
 import { RioLauncherError, ValidationError } from "../../types/errors";
 import type { ITelemetryService } from "../../types/services";
 import { NoOpTelemetryService } from "./NoOpTelemetryService";
-import { isDefinedObject } from "../../utils/type-guards";
+import { isDefinedObject, isDefined } from "../../utils/type-guards";
 import {
   DEFAULT_MAX_RETRIES,
   DEFAULT_INITIAL_DELAY,
@@ -210,18 +210,34 @@ export abstract class BaseService extends EventEmitter {
 
     switch (level) {
       case "error":
-        console.error(logMessage, data);
+        if (isDefined(data)) {
+          console.error(logMessage, data);
+        } else {
+          console.error(logMessage);
+        }
         break;
       case "warn":
-        console.warn(logMessage, data);
+        if (isDefined(data)) {
+          console.warn(logMessage, data);
+        } else {
+          console.warn(logMessage);
+        }
         break;
       case "info":
         // Use console.error for info to comply with eslint rules
-        console.error(logMessage, data);
+        if (isDefined(data)) {
+          console.error(logMessage, data);
+        } else {
+          console.error(logMessage);
+        }
         break;
       case "debug":
         // Use console.error for debug to comply with eslint rules
-        console.error(logMessage, data);
+        if (isDefined(data)) {
+          console.error(logMessage, data);
+        } else {
+          console.error(logMessage);
+        }
         break;
       default:
         throw new Error(`Unknown log level: ${String(level)}`);

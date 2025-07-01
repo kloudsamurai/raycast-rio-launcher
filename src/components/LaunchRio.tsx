@@ -2,7 +2,7 @@
  * Advanced Rio launcher with smart features
  */
 
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useMemo } from "react";
 import {
   List,
   ActionPanel,
@@ -39,9 +39,12 @@ interface ILaunchOption {
   subtitle?: string;
   icon: Icon | string;
   color?: Color;
-  action: () => Promise<void>;
+  type: "quick-launch" | "pick-directory" | "manage-sessions" | "launch-history" | "profile" | "recent";
   keywords?: string[];
   accessories?: { text: string; icon?: Icon }[];
+  // Additional data for specific types
+  profileId?: string;
+  directory?: string;
 }
 
 function LaunchRioComponent(): React.ReactElement {
@@ -52,9 +55,10 @@ function LaunchRioComponent(): React.ReactElement {
 
   // Services
   const { data: services, isLoading: servicesLoading } = usePromise(async () => {
+    const { initializeServices } = await import("../services");
+    await initializeServices();
+    
     const registry = getServiceRegistry();
-    await registry.initializeAll();
-
     return {
       process: await registry.get<ProcessService>("process"),
       profile: await registry.get<ProfileService>("profile"),
@@ -102,11 +106,6 @@ function LaunchRioComponent(): React.ReactElement {
     },
   );
 
-  // Frecency sorting for launch options
-  const { data: sortedOptions, visitItem } = useFrecencySorting(buildLaunchOptions(), {
-    key: (option: ILaunchOption) => option.id,
-    namespace: "rio-launch-options",
-  });
 
   // Add to recent directories
   const addToRecentDirectories = useCallback(
@@ -267,12 +266,8 @@ function LaunchRioComponent(): React.ReactElement {
     [services, push, pop, addToRecentDirectories],
   );
 
-  // Build launch options
+  // Build launch options - pure data, no functions
   function buildLaunchOptions(): ILaunchOption[] {
-    if (services === undefined) {
-      return [];
-    }
-
     const options: ILaunchOption[] = [
       // Quick launch
       {
@@ -281,7 +276,7 @@ function LaunchRioComponent(): React.ReactElement {
         subtitle: "Launch Rio in current directory",
         icon: Icon.Rocket,
         color: Color.Green,
-        action: handleQuickLaunch,
+        type: "quick-launch",
         keywords: ["quick", "fast", "now"],
         accessories: [{ text: "⌘↵" }],
       },
@@ -293,7 +288,7 @@ function LaunchRioComponent(): React.ReactElement {
         subtitle: "Browse and select working directory",
         icon: Icon.Folder,
         color: Color.Blue,
-        action: async () => handleLaunchInDirectory(homedir()),
+        type: "pick-directory",
         keywords: ["browse", "folder", "directory", "pick"],
       },
 
@@ -304,9 +299,7 @@ function LaunchRioComponent(): React.ReactElement {
         subtitle: `${runningProcesses.length} active sessions`,
         icon: Icon.Window,
         color: Color.Purple,
-        action: async () => {
-          push(<SessionManager />);
-        },
+        type: "manage-sessions",
         keywords: ["session", "window", "running"],
         accessories: [{ text: runningProcesses.length.toString() }],
       },
@@ -318,23 +311,7 @@ function LaunchRioComponent(): React.ReactElement {
         subtitle: "Recent launches and frecency",
         icon: Icon.Clock,
         color: Color.Orange,
-        action: async () =>
-          push(
-            <LaunchHistory
-              history={recentDirectories}
-              onSelect={(item: IRecentItem) => {
-                (async (): Promise<void> => {
-                  await services.process.launchRio({
-                    workingDirectory: item.value,
-                  });
-                  await addToRecentDirectories(item.value);
-                  pop();
-                })().catch(() => {
-                  console.error("Failed to launch Rio from history");
-                });
-              }}
-            />,
-          ),
+        type: "launch-history",
         keywords: ["history", "recent", "frecency"],
       },
     ];
@@ -347,7 +324,8 @@ function LaunchRioComponent(): React.ReactElement {
         subtitle: profile.workingDirectory ?? "Default directory",
         icon: profile.icon ?? Icon.Terminal,
         color: profile.color,
-        action: async () => handleLaunchWithProfile(profile),
+        type: "profile",
+        profileId: profile.id,
         keywords: ["profile", profile.name.toLowerCase()],
         accessories: isDefinedString(profile.workingDirectory)
           ? [{ text: basename(profile.workingDirectory) }]
@@ -357,13 +335,6 @@ function LaunchRioComponent(): React.ReactElement {
 
     // Add recent directories
     if (recentDirectories.length > 0) {
-      options.push({
-        id: "recent-separator",
-        title: "Recent Directories",
-        icon: Icon.Clock,
-        action: async () => {},
-      });
-
       const MAX_RECENT_TO_SHOW = 5;
       for (const recent of recentDirectories.slice(0, MAX_RECENT_TO_SHOW)) {
         options.push({
@@ -371,13 +342,8 @@ function LaunchRioComponent(): React.ReactElement {
           title: isDefinedString(recent.label) ? recent.label : basename(recent.value),
           subtitle: recent.value,
           icon: Icon.Folder,
-          action: async () => {
-            await services.process.launchRio({
-              workingDirectory: recent.value,
-            });
-            await addToRecentDirectories(recent.value);
-            pop();
-          },
+          type: "recent",
+          directory: recent.value,
           keywords: ["recent", basename(recent.value).toLowerCase()],
           accessories: [{ date: new Date(recent.lastUsed), tooltip: "Last used" }],
         });
@@ -386,6 +352,68 @@ function LaunchRioComponent(): React.ReactElement {
 
     return options;
   }
+
+  // Build launch options using useMemo for stable reference
+  const launchOptionsMemo = useMemo(() => {
+    return buildLaunchOptions();
+  }, [profiles, recentDirectories, runningProcesses]);
+
+  // For now, skip frecency sorting to get it working
+  const sortedOptions = launchOptionsMemo;
+  const visitItem = (_id: string) => Promise.resolve();
+
+  // Create handler without using visitItem directly
+  const createOptionHandler = (visitItemFn: (id: string) => Promise<void>) => {
+    return async (option: ILaunchOption) => {
+      switch (option.type) {
+        case "quick-launch":
+          await handleQuickLaunch();
+          break;
+        case "pick-directory":
+          await handleLaunchInDirectory(homedir());
+          break;
+        case "manage-sessions":
+          push(<SessionManager />);
+          break;
+        case "launch-history":
+          push(
+            <LaunchHistory
+              history={recentDirectories}
+              onSelect={async (item: IRecentItem) => {
+                if (services) {
+                  await services.process.launchRio({
+                    workingDirectory: item.value,
+                  });
+                  await addToRecentDirectories(item.value);
+                  pop();
+                }
+              }}
+            />,
+          );
+          break;
+        case "profile":
+          if (option.profileId) {
+            const profile = profiles.find((p) => p.id === option.profileId);
+            if (profile) {
+              visitItemFn(profile.id).catch(() => {
+                console.error("Failed to track frecency");
+              });
+              await handleLaunchWithProfile(profile);
+            }
+          }
+          break;
+        case "recent":
+          if (option.directory && services) {
+            await services.process.launchRio({
+              workingDirectory: option.directory,
+            });
+            await addToRecentDirectories(option.directory);
+            pop();
+          }
+          break;
+      }
+    };
+  };
 
   // Event listeners
   useEffect(() => {
@@ -416,7 +444,7 @@ function LaunchRioComponent(): React.ReactElement {
       searchText={searchText}
       onSearchTextChange={setSearchText}
     >
-      {sortedOptions.map((option: ILaunchOption) => (
+      {((sortedOptions || launchOptionsMemo) || []).map((option: ILaunchOption) => (
         <List.Item
           accessories={option.accessories}
           actions={
@@ -425,10 +453,55 @@ function LaunchRioComponent(): React.ReactElement {
                 icon={option.icon}
                 shortcut={{ modifiers: ["cmd"], key: "return" }}
                 title={option.title}
-                onAction={() => {
-                  option.action().catch(() => {
-                    console.error("Action failed");
-                  });
+                onAction={async () => {
+                  try {
+                    switch (option.type) {
+                      case "quick-launch":
+                        await handleQuickLaunch();
+                        break;
+                      case "pick-directory":
+                        await handleLaunchInDirectory(homedir());
+                        break;
+                      case "manage-sessions":
+                        push(<SessionManager />);
+                        break;
+                      case "launch-history":
+                        push(
+                          <LaunchHistory
+                            history={recentDirectories}
+                            onSelect={async (item: IRecentItem) => {
+                              if (services) {
+                                await services.process.launchRio({
+                                  workingDirectory: item.value,
+                                });
+                                await addToRecentDirectories(item.value);
+                                pop();
+                              }
+                            }}
+                          />,
+                        );
+                        break;
+                      case "profile":
+                        if (option.profileId) {
+                          const profile = profiles.find((p) => p.id === option.profileId);
+                          if (profile) {
+                            await handleLaunchWithProfile(profile);
+                          }
+                        }
+                        break;
+                      case "recent":
+                        if (option.directory && services) {
+                          await services.process.launchRio({
+                            workingDirectory: option.directory,
+                          });
+                          await addToRecentDirectories(option.directory);
+                          pop();
+                        }
+                        break;
+                    }
+                  } catch (error) {
+                    console.error("Action failed:", error);
+                  }
                 }}
               />
               {option.id.startsWith("recent-") && (

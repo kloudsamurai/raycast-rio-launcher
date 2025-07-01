@@ -18,55 +18,29 @@
       "name": "launch-rio",
       "title": "Rio",
       "subtitle": "Terminal",
-      "description": "Opens the Rio terminal emulator",
-      "mode": "no-view",
-      "keywords": [
-        "rioterm",
-        "terminal",
-        "rio"
-      ],
-      "interval": "30m"
-    },
-    {
-      "name": "launch-advanced",
-      "title": "Launch Rio (advanced)",
-      "subtitle": "Terminal",
       "description": "Launch Rio with advanced options and profiles",
       "mode": "view",
       "keywords": [
         "rioterm",
         "terminal",
         "rio",
-        "launch",
-        "advanced"
+        "launch"
       ]
     },
     {
       "name": "configure-rio",
       "title": "Configure Rio",
       "subtitle": "Settings",
-      "description": "Configure Rio terminal features and capabilities",
+      "description": "Advanced Rio configuration with TOML editing and feature management",
       "mode": "view",
       "keywords": [
         "config",
         "settings",
         "features",
-        "rio",
-        "configure"
-      ]
-    },
-    {
-      "name": "configure-advanced",
-      "title": "Configure Rio (advanced)",
-      "subtitle": "Settings",
-      "description": "Advanced Rio configuration with TOML editing",
-      "mode": "view",
-      "keywords": [
-        "config",
-        "settings",
         "advanced",
         "toml",
-        "rio"
+        "rio",
+        "configure"
       ]
     },
     {

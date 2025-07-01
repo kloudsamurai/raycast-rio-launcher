@@ -68,21 +68,27 @@ export class TelemetryService extends BaseService implements ITelemetryService {
   }
 
   protected async onInitialize(): Promise<void> {
-    // Load telemetry preference
-    const enabled: boolean | undefined = await LocalStorage.getItem<boolean>(TELEMETRY_ENABLED_KEY);
-    this.isEnabled = enabled !== false;
+    try {
+      // Load telemetry preference
+      const enabled: unknown = await LocalStorage.getItem(TELEMETRY_ENABLED_KEY);
+      this.isEnabled = enabled !== false;
 
-    // Load stored events
-    await this.loadStoredEvents();
+      // Load stored events
+      await this.loadStoredEvents();
 
-    // Set up event listeners
-    this.setupEventListeners();
+      // Set up event listeners
+      this.setupEventListeners();
 
-    // Start session
-    await this.startSession();
+      // Start session
+      await this.startSession();
 
-    // Schedule periodic flush
-    this.scheduleFlush();
+      // Schedule periodic flush
+      this.scheduleFlush();
+    } catch (error: unknown) {
+      this.log("error", "Failed to initialize telemetry", error);
+      // Continue with telemetry disabled
+      this.isEnabled = false;
+    }
   }
 
   protected async onCleanup(): Promise<void> {
@@ -335,10 +341,10 @@ export class TelemetryService extends BaseService implements ITelemetryService {
   }
 
   private async startSession(): Promise<void> {
-    await LocalStorage.setItem(SESSION_STORAGE_KEY, {
+    await LocalStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({
       id: this.sessionId,
       started: new Date().toISOString(),
-    });
+    }));
 
     await this.trackEvent("session_started", {
       context: this.context,
@@ -346,14 +352,18 @@ export class TelemetryService extends BaseService implements ITelemetryService {
   }
 
   private async endSession(): Promise<void> {
-    const session: unknown = await LocalStorage.getItem<unknown>(SESSION_STORAGE_KEY);
-    if (isDefinedObject(session) && "started" in session) {
-      const sessionTyped = session as { started: string };
-      const duration = Date.now() - new Date(sessionTyped.started).getTime();
-      await this.trackEvent("session_ended", {
-        duration,
-        eventCount: this.events.length,
-      });
+    const sessionStr: string | undefined = await LocalStorage.getItem<string>(SESSION_STORAGE_KEY);
+    if (isDefinedString(sessionStr)) {
+      try {
+        const session = JSON.parse(sessionStr) as { id: string; started: string };
+        const duration = Date.now() - new Date(session.started).getTime();
+        await this.trackEvent("session_ended", {
+          duration,
+          eventCount: this.events.length,
+        });
+      } catch {
+        // Ignore parse errors
+      }
     }
 
     await LocalStorage.removeItem(SESSION_STORAGE_KEY);

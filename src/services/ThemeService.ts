@@ -33,20 +33,25 @@ export class ThemeService extends BaseService implements IThemeService {
   }
 
   protected async onInitialize(): Promise<void> {
-    // Get config service if not provided
-    if (!isDefined(this.configService)) {
-      const { getServiceRegistry } = await import("./base/ServiceRegistry");
-      const registry = getServiceRegistry();
-      this.configService = await registry.get<ConfigurationService>("configuration");
-    }
-
-    // Load themes
+    // Load themes first - config service is optional
     await this.loadThemes();
     await this.loadCurrentTheme();
 
     // Create default themes if none exist
     if (this.themes.size === 0) {
       await this.createDefaultThemes();
+    }
+
+    // Try to get config service but don't fail if not available
+    try {
+      if (!isDefined(this.configService)) {
+        const { getServiceRegistry } = await import("./base/ServiceRegistry");
+        const registry = getServiceRegistry();
+        this.configService = await registry.get<ConfigurationService>("configuration");
+      }
+    } catch {
+      // Config service is optional for theme service
+      this.log("warn", "Could not get configuration service - theme sync disabled");
     }
   }
 

@@ -61,7 +61,7 @@ export async function initializeServices(): Promise<void> {
   // Register Theme service
   registry.registerClass("theme", ThemeService, {
     singleton: true,
-    dependencies: ["eventBus", "configuration", "telemetry"],
+    dependencies: ["eventBus", "telemetry"],
   });
 
   // Register Process service

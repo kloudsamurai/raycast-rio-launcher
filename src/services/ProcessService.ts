@@ -106,12 +106,17 @@ export class ProcessService extends BaseService implements IProcessService {
           cwd,
         });
 
-        // Rio is a CLI binary, not a macOS .app bundle, so we use spawn
+        // Launch Rio directly but not detached so it comes to foreground
         const env = await this.buildEnvironment(options);
+        
+        // Use exec to launch Rio in a way that brings it to front
+        const argsString = args.map(arg => `"${arg}"`).join(' ');
+        const launchCommand = `"${rioPath}" ${argsString}`;
+        
         const childProcess = spawn(rioPath, args, {
           cwd,
           env,
-          detached: true,
+          detached: false, // Don't detach - let it run in foreground
           stdio: 'ignore',
         });
 
@@ -125,13 +130,12 @@ export class ProcessService extends BaseService implements IProcessService {
           throw new ProcessError("Rio process did not start (no PID)");
         }
 
+        // Now detach it after it's started
         childProcess.unref();
-        this.log("info", `Rio launched with PID: ${childProcess.pid}`);
-
-        this.log("info", "Rio launched successfully");
         
-        // Use the actual PID from the child process
         const processPid = childProcess.pid;
+        this.log("info", `Rio launched with PID: ${processPid}`);
+        this.log("info", "Rio launched successfully");
 
         // Create Rio process object
         const rioProcess: IRioProcess = {
@@ -284,17 +288,28 @@ export class ProcessService extends BaseService implements IProcessService {
     }
 
     try {
-      // Since Rio is a CLI app, we can't use Window Management API
-      // Instead, we'll use AppleScript to bring Rio to front
-      const script = `
+      // For Rio, we need to use AppleScript to focus the window
+      const focusScript = `
         tell application "System Events"
-          set frontProcess to first process whose unix id is ${pid}
-          set frontmost of frontProcess to true
+          try
+            set rioProcess to first process whose unix id is ${pid}
+            set frontmost of rioProcess to true
+            set visible of rioProcess to true
+            -- Force window to front
+            tell rioProcess
+              if (count of windows) > 0 then
+                set frontWindow to front window
+                perform action "AXRaise" of frontWindow
+              end if
+            end tell
+          on error errMsg
+            error "Failed to find Rio process with PID ${pid}"
+          end try
         end tell
       `;
       
       await new Promise<void>((resolve, reject) => {
-        exec(`osascript -e '${script.replace(/'/g, "'\"'\"'")}'`, (error) => {
+        exec(`osascript -e '${focusScript.replace(/'/g, "'\"'\"'").replace(/\n/g, " ")}'`, (error) => {
           if (error) {
             reject(new ProcessError("Failed to focus Rio window", { cause: error, pid }));
           } else {
@@ -505,41 +520,83 @@ export class ProcessService extends BaseService implements IProcessService {
   }
 
   private async scanExistingProcesses(): Promise<void> {
-    return new Promise<void>((resolve: () => void) => {
-      // Look for the actual Rio binary process
-      exec("ps aux | grep -E '[/]rio$' | awk '{print $2}'", (error: Error | null, stdout: string) => {
-        if (error !== null) {
-          // No Rio processes found
-          resolve();
-          return;
-        }
+    try {
+      // First, find the Rio process PID
+      const pidResult = await new Promise<number | null>((resolve) => {
+        exec("ps aux | grep -E '[/]rio$' | awk '{print $2}'", (error: Error | null, stdout: string) => {
+          if (error !== null || !stdout.trim()) {
+            resolve(null);
+            return;
+          }
+          const pid = parseInt(stdout.trim().split("\n")[0], 10);
+          resolve(Number.isNaN(pid) ? null : pid);
+        });
+      });
 
-        const pids: number[] = stdout
-          .trim()
-          .split("\n")
-          .filter((line: string) => line.length > 0)
-          .map((pid: string) => parseInt(pid, 10))
-          .filter((pid: number) => !Number.isNaN(pid));
+      // Clear existing processes
+      this.processes.clear();
 
-        // Clear and update tracked processes
-        this.processes.clear();
+      if (pidResult === null) {
+        this.log("info", "No Rio process found");
+        return;
+      }
+
+      // Now get windows to find Rio windows
+      try {
+        const windows = await WindowManagement.getWindowsOnActiveDesktop();
         
-        for (const pid of pids) {
+        // Find windows that likely belong to Rio
+        // Since Rio is a CLI app, we need heuristics
+        const rioWindows = windows.filter(window => {
+          return window.owningApplication?.processId === pidResult ||
+                 (window.title && window.title.toLowerCase().includes('rio')) ||
+                 (!window.owner && window.title && window.title.includes('~')); // Terminal windows often show path
+        });
+
+        if (rioWindows.length > 0) {
+          // Track each Rio window separately
+          rioWindows.forEach((window, index) => {
+            const rioProcess: IRioProcess = {
+              pid: pidResult + index, // Create unique pseudo-PIDs for each window
+              windowId: window.id,
+              title: window.title || `Rio Terminal ${index + 1}`,
+              workingDirectory: homedir(),
+              startTime: new Date(),
+              isActive: true,
+            };
+            this.processes.set(rioProcess.pid, rioProcess);
+          });
+          
+          this.log("info", `Found ${rioWindows.length} Rio window(s)`);
+        } else {
+          // No windows found, just track the process
           const rioProcess: IRioProcess = {
-            pid,
-            windowId: `rio-${pid}`,
+            pid: pidResult,
+            windowId: `rio-${pidResult}`,
             title: "Rio Terminal",
             workingDirectory: homedir(),
             startTime: new Date(),
             isActive: true,
           };
-          this.processes.set(pid, rioProcess);
+          this.processes.set(pidResult, rioProcess);
+          this.log("info", "Found Rio process but no windows detected");
         }
-        
-        this.log("info", `Found ${this.processes.size} Rio process(es)`);
-        resolve();
-      });
-    });
+      } catch (windowError) {
+        // Window Management API not available, just track the process
+        const rioProcess: IRioProcess = {
+          pid: pidResult,
+          windowId: `rio-${pidResult}`,
+          title: "Rio Terminal",
+          workingDirectory: homedir(),
+          startTime: new Date(),
+          isActive: true,
+        };
+        this.processes.set(pidResult, rioProcess);
+        this.log("warn", "Window Management API not available", windowError);
+      }
+    } catch (error) {
+      this.log("error", "Failed to scan for Rio processes", error);
+    }
   }
 
   private startProcessMonitoring(rioProcess: IRioProcess): void {

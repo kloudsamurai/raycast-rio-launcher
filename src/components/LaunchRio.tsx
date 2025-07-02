@@ -14,6 +14,7 @@ import {
   useNavigation,
   getSelectedFinderItems,
   LocalStorage,
+  closeMainWindow,
 } from "@raycast/api";
 import { useFrecencySorting, usePromise, useCachedPromise } from "@raycast/utils";
 import type { ProcessService } from "../services/ProcessService";
@@ -223,7 +224,8 @@ function LaunchRioComponent(): React.ReactElement {
       toast.title = "Rio launched!";
       toast.message = `Working directory: ${basename(workingDirectory)}`;
 
-      pop();
+      // Close Raycast to let Rio come to front
+      await closeMainWindow();
     } catch (error) {
       toast.style = Toast.Style.Failure;
       toast.title = "Failed to launch Rio";
@@ -269,7 +271,8 @@ function LaunchRioComponent(): React.ReactElement {
         toast.title = "Rio launched!";
         toast.message = `Profile: ${profile.name}`;
 
-        pop();
+        // Close Raycast to let Rio come to front
+        await closeMainWindow();
       } catch (error) {
         toast.style = Toast.Style.Failure;
         toast.title = "Failed to launch Rio";
@@ -298,7 +301,7 @@ function LaunchRioComponent(): React.ReactElement {
                 workingDirectory: selectedDir,
               });
               await addToRecentDirectories(selectedDir);
-              pop();
+              await closeMainWindow();
             } catch (error) {
               await showToast({
                 style: Toast.Style.Failure,
@@ -486,7 +489,7 @@ function LaunchRioComponent(): React.ReactElement {
                                   workingDirectory: item.value,
                                 });
                                 await addToRecentDirectories(item.value);
-                                pop();
+                                await closeMainWindow();
                               }
                             }}
                           />,
@@ -506,7 +509,7 @@ function LaunchRioComponent(): React.ReactElement {
                             workingDirectory: option.directory,
                           });
                           await addToRecentDirectories(option.directory);
-                          pop();
+                          await closeMainWindow();
                         }
                         break;
                     }

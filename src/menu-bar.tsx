@@ -3,7 +3,7 @@
  */
 
 import React, { useState } from "react";
-import { MenuBarExtra, showHUD, open, showToast, Toast, Icon, Color, getPreferenceValues } from "@raycast/api";
+import { MenuBarExtra, showHUD, open, showToast, Toast, Icon, Color, getPreferenceValues, closeMainWindow } from "@raycast/api";
 import { useCachedPromise } from "@raycast/utils";
 import { getServiceRegistry, areServicesInitialized } from "./services";
 import type { ProcessService } from "./services/ProcessService";
@@ -204,6 +204,7 @@ export default function RioMenuBar(): React.JSX.Element {
       await showHUD("Launching Rio...");
       if (isDefinedObject(services) && isDefinedObject(services.process)) {
         await services.process.launchRio();
+        await closeMainWindow();
       } else {
         await showHUD("Process service not available");
       }
@@ -226,6 +227,7 @@ export default function RioMenuBar(): React.JSX.Element {
           if (isDefinedString(command) && isDefinedObject(services.process)) {
             await services.process.launchRio({ command });
             await showHUD(`Attached to tmux session: ${sessionName}`);
+            await closeMainWindow();
           }
         }
       } else {

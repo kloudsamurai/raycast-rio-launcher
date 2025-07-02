@@ -61,6 +61,8 @@ class ServiceManager {
     // Wait for initialization to complete
     try {
       await this.initializationPromise;
+      // Ensure flag is set after promise resolves
+      this.isInitialized = true;
     } catch (error) {
       // Reset on error so we can retry
       this.initializationPromise = null;
@@ -160,9 +162,6 @@ class ServiceManager {
 
   // Initialize all singleton services
   await registry.initializeAll();
-  
-  // Mark as initialized
-  this.isInitialized = true;
   }
 }
 

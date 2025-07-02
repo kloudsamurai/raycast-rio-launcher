@@ -284,30 +284,26 @@ export class ProcessService extends BaseService implements IProcessService {
     }
 
     try {
-      // Get all windows on the active desktop
-      const windows = await WindowManagement.getWindowsOnActiveDesktop();
+      // Since Rio is a CLI app, we can't use Window Management API
+      // Instead, we'll use AppleScript to bring Rio to front
+      const script = `
+        tell application "System Events"
+          set frontProcess to first process whose unix id is ${pid}
+          set frontmost of frontProcess to true
+        end tell
+      `;
       
-      // Find Rio windows - they should have "rio" in the owner name
-      const rioWindows = windows.filter(window => 
-        window.owner && window.owner.name && 
-        window.owner.name.toLowerCase().includes("rio")
-      );
-      
-      if (rioWindows.length === 0) {
-        throw new ProcessError("No Rio windows found");
-      }
-      
-      // Find the window that matches this process (if we can)
-      // For now, just focus the first Rio window we find
-      const targetWindow = rioWindows[0];
-      
-      // Focus the window
-      await WindowManagement.setWindowBounds({
-        id: targetWindow.id,
-        bounds: { ...targetWindow.bounds }
+      await new Promise<void>((resolve, reject) => {
+        exec(`osascript -e '${script.replace(/'/g, "'\"'\"'")}'`, (error) => {
+          if (error) {
+            reject(new ProcessError("Failed to focus Rio window", { cause: error, pid }));
+          } else {
+            resolve();
+          }
+        });
       });
       
-      this.log("info", `Focused Rio window: ${targetWindow.id}`);
+      this.log("info", `Focused Rio process: PID ${pid}`);
     } catch (error) {
       throw new ProcessError("Failed to attach to process", {
         cause: error instanceof Error ? error : new Error(String(error)),
@@ -510,7 +506,8 @@ export class ProcessService extends BaseService implements IProcessService {
 
   private async scanExistingProcesses(): Promise<void> {
     return new Promise<void>((resolve: () => void) => {
-      exec("pgrep -f rio", (error: Error | null, stdout: string) => {
+      // Look for the actual Rio binary process
+      exec("ps aux | grep -E '[/]rio$' | awk '{print $2}'", (error: Error | null, stdout: string) => {
         if (error !== null) {
           // No Rio processes found
           resolve();
@@ -520,36 +517,26 @@ export class ProcessService extends BaseService implements IProcessService {
         const pids: number[] = stdout
           .trim()
           .split("\n")
+          .filter((line: string) => line.length > 0)
           .map((pid: string) => parseInt(pid, 10))
           .filter((pid: number) => !Number.isNaN(pid));
 
-        // Update tracked processes
+        // Clear and update tracked processes
+        this.processes.clear();
+        
         for (const pid of pids) {
-          if (!this.processes.has(pid)) {
-            const rioProcess: IRioProcess = {
-              pid,
-              windowId: `rio-${pid}`,
-              title: "Rio Terminal",
-              workingDirectory: homedir(),
-              startTime: new Date(),
-              isActive: true,
-            };
-            this.processes.set(pid, rioProcess);
-          }
+          const rioProcess: IRioProcess = {
+            pid,
+            windowId: `rio-${pid}`,
+            title: "Rio Terminal",
+            workingDirectory: homedir(),
+            startTime: new Date(),
+            isActive: true,
+          };
+          this.processes.set(pid, rioProcess);
         }
-
-        // Remove dead processes
-        for (const [pid] of this.processes) {
-          if (!pids.includes(pid)) {
-            this.processes.delete(pid);
-            const monitor: ReturnType<typeof setInterval> | null = this.processMonitors.get(pid);
-            if (isDefinedObject(monitor)) {
-              clearInterval(monitor);
-              this.processMonitors.delete(pid);
-            }
-          }
-        }
-
+        
+        this.log("info", `Found ${this.processes.size} Rio process(es)`);
         resolve();
       });
     });

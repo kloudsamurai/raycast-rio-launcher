@@ -410,7 +410,7 @@ export class ProcessService extends BaseService implements IProcessService {
     if (isDefinedObject(options)) {
       // Add working directory if specified
       if (isDefinedString(options.workingDirectory) && isNonEmptyString(options.workingDirectory)) {
-        args.push("--working-directory", options.workingDirectory);
+        args.push("--working-dir", options.workingDirectory);
       }
 
       // Add command if specified
